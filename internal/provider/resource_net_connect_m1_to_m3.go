@@ -16,8 +16,9 @@ import (
 
 // NetConnectM1ToM3Resource M1→M3 网络打通 Resource。
 type NetConnectM1ToM3Resource struct {
-	VpcepClient *vpcep.VpcepClient
-	DnsClient   interface{}
+	M3VpcepClient *vpcep.VpcepClient // M3 侧 VPCEP 客户端（用于创建 VPCEP-Server）
+	M1VpcepClient *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端（用于创建 VPCEP-Client）
+	DnsClient     interface{}
 }
 
 // NetConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
@@ -152,14 +153,9 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 		return
 	}
 
-	r.VpcepClient = data.M3VpcepClient // 默认使用 M3 客户端
+	r.M3VpcepClient = data.M3VpcepClient
+	r.M1VpcepClient = data.M1VpcepClient
 	r.DnsClient = data.M3DnsClient
-}
-
-// getM1VpcEpClient 获取 M1+ 侧 VPCEP 客户端。
-// TODO: 实际应该从 ProviderData 获取 M1 客户端
-func (r *NetConnectM1ToM3Resource) getM1VpcEpClient() *vpcep.VpcepClient {
-	return r.VpcepClient
 }
 
 // Create 执行 M1→M3 网络打通的完整创建流程：
@@ -214,8 +210,7 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// ========== Step 4 - 轮询等待 Client 状态就绪 ==========
 	tflog.Info(ctx, "Step 4: 轮询等待 VPCEP-Client 状态就绪")
-	m1Client := r.getM1VpcEpClient()
-	if err := r.waitForVpcEndpointReady(ctx, m1Client, clientId); err != nil {
+	if err := r.waitForVpcEndpointReady(ctx, r.M1VpcepClient, clientId); err != nil {
 		resp.Diagnostics.AddError("等待 VPCEP-Client 就绪超时", err.Error())
 		return
 	}
@@ -279,7 +274,7 @@ func (r *NetConnectM1ToM3Resource) createVpcEndpointService(ctx context.Context,
 		Body: createOpts,
 	}
 
-	response, err := r.VpcepClient.CreateEndpointService(request)
+	response, err := r.M3VpcepClient.CreateEndpointService(request)
 	if err != nil {
 		return "", fmt.Errorf("创建 VPCEP-Server 失败: %w", err)
 	}
@@ -312,8 +307,7 @@ func (r *NetConnectM1ToM3Resource) createVpcEndpoint(ctx context.Context, server
 		Body: createOpts,
 	}
 
-	// TODO: 使用 M1 客户端
-	response, err := r.VpcepClient.CreateEndpoint(request)
+	response, err := r.M1VpcepClient.CreateEndpoint(request)
 	if err != nil {
 		return "", "", fmt.Errorf("创建 VPCEP-Client 失败: %w", err)
 	}
@@ -369,7 +363,7 @@ func (r *NetConnectM1ToM3Resource) deleteVpcEndpointService(ctx context.Context,
 	request := &model.DeleteEndpointServiceRequest{
 		VpcEndpointServiceId: serverId,
 	}
-	_, err := r.VpcepClient.DeleteEndpointService(request)
+	_, err := r.M3VpcepClient.DeleteEndpointService(request)
 	if err != nil {
 		return fmt.Errorf("删除 VPCEP-Server 失败: %w", err)
 	}
@@ -378,11 +372,10 @@ func (r *NetConnectM1ToM3Resource) deleteVpcEndpointService(ctx context.Context,
 
 // deleteVpcEndpoint 删除 VPCEP-Client。
 func (r *NetConnectM1ToM3Resource) deleteVpcEndpoint(ctx context.Context, clientId string) error {
-	// TODO: 使用 M1 客户端
 	request := &model.DeleteEndpointRequest{
 		VpcEndpointId: clientId,
 	}
-	_, err := r.VpcepClient.DeleteEndpoint(request)
+	_, err := r.M1VpcepClient.DeleteEndpoint(request)
 	if err != nil {
 		return fmt.Errorf("删除 VPCEP-Client 失败: %w", err)
 	}
@@ -457,7 +450,7 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		request := &model.ListServiceDetailsRequest{
 			VpcEndpointServiceId: serverId,
 		}
-		response, err := r.VpcepClient.ListServiceDetails(request)
+		response, err := r.M3VpcepClient.ListServiceDetails(request)
 		if err != nil {
 			// 如果服务不存在，认为已被删除
 			tflog.Warn(ctx, "VPCEP-Server 不存在，标记为已删除", map[string]interface{}{
@@ -477,7 +470,7 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		request := &model.ListEndpointInfoDetailsRequest{
 			VpcEndpointId: clientId,
 		}
-		response, err := r.VpcepClient.ListEndpointInfoDetails(request)
+		response, err := r.M1VpcepClient.ListEndpointInfoDetails(request)
 		if err != nil {
 			// 如果客户端不存在，认为已被删除
 			tflog.Warn(ctx, "VPCEP-Client 不存在，标记为已删除", map[string]interface{}{
