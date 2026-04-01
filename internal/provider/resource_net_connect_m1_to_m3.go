@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,16 +10,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-
-	"github.com/chnsz/golangsdk"
-	"github.com/chnsz/golangsdk/openstack/vpcep/v1/endpoints"
-	"github.com/chnsz/golangsdk/openstack/vpcep/v1/services"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
+	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
 // NetConnectM1ToM3Resource M1→M3 网络打通 Resource。
 type NetConnectM1ToM3Resource struct {
-	VpcepClient *golangsdk.ServiceClient
-	DnsClient   *golangsdk.ServiceClient
+	VpcepClient *vpcep.VpcepClient
+	DnsClient   interface{}
 }
 
 // NetConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
@@ -44,6 +43,32 @@ type VpcepPortBlock struct {
 	ClientPort types.String `tfsdk:"client_port"`
 	ServerPort types.String `tfsdk:"server_port"`
 	Protocol   types.String `tfsdk:"protocol"`
+}
+
+// stringToPortListProtocol 将字符串转换为 PortListProtocol 枚举。
+func stringToPortListProtocol(s string) (*model.PortListProtocol, error) {
+	var p model.PortListProtocol
+	jsonBytes, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(jsonBytes, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// stringToServerType 将字符串转换为 CreateEndpointServiceRequestBodyServerType 枚举。
+func stringToServerType(s string) (model.CreateEndpointServiceRequestBodyServerType, error) {
+	var st model.CreateEndpointServiceRequestBodyServerType
+	jsonBytes, err := json.Marshal(s)
+	if err != nil {
+		return st, err
+	}
+	if err := json.Unmarshal(jsonBytes, &st); err != nil {
+		return st, err
+	}
+	return st, nil
 }
 
 // NewNetConnectM1ToM3Resource 创建 M1→M3 网络打通 Resource 实例。
@@ -132,11 +157,8 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 }
 
 // getM1VpcEpClient 获取 M1+ 侧 VPCEP 客户端。
-// 注意：当前 Resource 使用 M3 的 ProviderData，M1 客户端需要单独获取。
-// 这里暂时使用 M3VpcepClient 代替，后续需要修改 Configure 逻辑传入完整的 ProviderData。
-func (r *NetConnectM1ToM3Resource) getM1VpcEpClient() *golangsdk.ServiceClient {
-	// TODO: 实际应该从 ProviderData 获取 M1 客户端
-	// 目前临时返回 M3 客户端，仅用于编译通过
+// TODO: 实际应该从 ProviderData 获取 M1 客户端
+func (r *NetConnectM1ToM3Resource) getM1VpcEpClient() *vpcep.VpcepClient {
 	return r.VpcepClient
 }
 
@@ -215,78 +237,96 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 // createVpcEndpointService 在 M3 侧创建 VPCEP-Server。
 func (r *NetConnectM1ToM3Resource) createVpcEndpointService(ctx context.Context, plan *NetConnectM1ToM3Model) (string, error) {
 	// 构建端口映射
-	var ports []services.PortOpts
+	var ports []model.PortList
 	for _, port := range plan.M3VpcepServerPorts {
-		ports = append(ports, services.PortOpts{
-			Protocol:   port.Protocol.ValueString(),
-			ClientPort: 0, // 由系统自动分配
-			ServerPort: 0, // 由系统自动分配
+		var clientPort, serverPort int32
+		fmt.Sscanf(port.ClientPort.ValueString(), "%d", &clientPort)
+		fmt.Sscanf(port.ServerPort.ValueString(), "%d", &serverPort)
+
+		protocol, err := stringToPortListProtocol(port.Protocol.ValueString())
+		if err != nil {
+			return "", fmt.Errorf("转换协议类型失败: %w", err)
+		}
+
+		ports = append(ports, model.PortList{
+			ClientPort: &clientPort,
+			ServerPort: &serverPort,
+			Protocol:   protocol,
 		})
 	}
 
 	// approval_enabled=false 表示不需要审批
 	approvalEnabled := false
-	createOpts := services.CreateOpts{
-		VpcID:      plan.M3VpcId.ValueString(),
-		PortID:     plan.M3BackendId.ValueString(),
-		ServerType: plan.M3BackendType.ValueString(),
-		Ports:      ports,
-		Approval:   &approvalEnabled,
+	serverType, err := stringToServerType(plan.M3BackendType.ValueString())
+	if err != nil {
+		return "", fmt.Errorf("转换服务器类型失败: %w", err)
+	}
+	createOpts := &model.CreateEndpointServiceRequestBody{
+		PortId:          plan.M3BackendId.ValueString(),
+		VpcId:           plan.M3VpcId.ValueString(),
+		ServerType:      serverType,
+		ApprovalEnabled: &approvalEnabled,
+		Ports:           ports,
 	}
 
 	tflog.Debug(ctx, "创建 VPCEP-Server 请求参数", map[string]interface{}{
-		"vpc_id":      createOpts.VpcID,
-		"port_id":     createOpts.PortID,
-		"server_type": createOpts.ServerType,
+		"vpc_id":      createOpts.VpcId,
+		"port_id":     createOpts.PortId,
+		"server_type": serverType.Value(),
 	})
 
-	result := services.Create(r.VpcepClient, createOpts)
-	if result.Err != nil {
-		return "", fmt.Errorf("创建 VPCEP-Server 失败: %s", result.Err.Error())
+	request := &model.CreateEndpointServiceRequest{
+		Body: createOpts,
 	}
 
-	// 从结果中提取 Service 对象
-	service, err := result.Extract()
+	response, err := r.VpcepClient.CreateEndpointService(request)
 	if err != nil {
-		return "", fmt.Errorf("解析 VPCEP-Server 创建结果失败: %s", err.Error())
+		return "", fmt.Errorf("创建 VPCEP-Server 失败: %w", err)
 	}
 
-	return service.ID, nil
+	if response.Id == nil {
+		return "", fmt.Errorf("创建 VPCEP-Server 成功但未返回 ID")
+	}
+
+	return *response.Id, nil
 }
 
 // createVpcEndpoint 在 M1+ 侧创建 VPCEP-Client。
 func (r *NetConnectM1ToM3Resource) createVpcEndpoint(ctx context.Context, serverId string, plan *NetConnectM1ToM3Model) (string, string, error) {
 	enableDNS := false
-	createOpts := endpoints.CreateOpts{
-		ServiceID: serverId,
-		VpcID:     plan.M1VpcId.ValueString(),
-		SubnetID:  plan.M1SubnetId.ValueString(),
-		EnableDNS: &enableDNS,
+	subnetId := plan.M1SubnetId.ValueString()
+	createOpts := &model.CreateEndpointRequestBody{
+		EndpointServiceId: serverId,
+		VpcId:              plan.M1VpcId.ValueString(),
+		SubnetId:           &subnetId,
+		EnableDns:          &enableDNS,
 	}
 
 	tflog.Debug(ctx, "创建 VPCEP-Client 请求参数", map[string]interface{}{
-		"service_id": createOpts.ServiceID,
-		"vpc_id":     createOpts.VpcID,
-		"subnet_id":  createOpts.SubnetID,
+		"endpoint_service_id": createOpts.EndpointServiceId,
+		"vpc_id":             createOpts.VpcId,
+		"subnet_id":          createOpts.SubnetId,
 	})
 
-	// TODO: 使用 M1 客户端而不是 M3 客户端
-	result := endpoints.Create(r.VpcepClient, createOpts)
-	if result.Err != nil {
-		return "", "", fmt.Errorf("创建 VPCEP-Client 失败: %s", result.Err.Error())
+	request := &model.CreateEndpointRequest{
+		Body: createOpts,
 	}
 
-	// 从结果中提取 Endpoint 对象
-	endpoint, err := result.Extract()
+	// TODO: 使用 M1 客户端
+	response, err := r.VpcepClient.CreateEndpoint(request)
 	if err != nil {
-		return "", "", fmt.Errorf("解析 VPCEP-Client 创建结果失败: %s", err.Error())
+		return "", "", fmt.Errorf("创建 VPCEP-Client 失败: %w", err)
 	}
 
-	return endpoint.ID, endpoint.IPAddr, nil
+	if response.Id == nil {
+		return "", "", fmt.Errorf("创建 VPCEP-Client 成功但未返回 ID")
+	}
+
+	return *response.Id, "", nil
 }
 
 // waitForVpcEndpointReady 轮询等待 VPCEP-Client 状态就绪。
-func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, client *golangsdk.ServiceClient, clientId string) error {
+func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, client *vpcep.VpcepClient, clientId string) error {
 	const (
 		pollInterval = 5 * time.Second
 		maxRetries   = 60
@@ -297,11 +337,11 @@ func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, 
 		case <-ctx.Done():
 			return fmt.Errorf("等待 VPCEP-Client 就绪超时: %s", clientId)
 		case <-time.After(pollInterval):
-			endpoint, err := endpoints.Get(client, clientId).Extract()
+			request := &model.ListEndpointInfoDetailsRequest{
+				VpcEndpointId: clientId,
+			}
+			response, err := client.ListEndpointInfoDetails(request)
 			if err != nil {
-				if _, ok := err.(golangsdk.ErrDefault404); ok {
-					return fmt.Errorf("VPCEP-Client 不存在: %s", clientId)
-				}
 				tflog.Warn(ctx, "查询 VPCEP-Client 状态失败", map[string]interface{}{
 					"client_id": clientId,
 					"error":     err.Error(),
@@ -311,11 +351,11 @@ func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, 
 
 			tflog.Debug(ctx, "VPCEP-Client 当前状态", map[string]interface{}{
 				"client_id": clientId,
-				"status":    endpoint.Status,
+				"status":    response.Status,
 			})
 
 			// 终态: accepted 或 pendingAcceptance（取决于是否需要审批）
-			if endpoint.Status == "accepted" || endpoint.Status == "pendingAcceptance" {
+			if response.Status != nil && (response.Status.Value() == "accepted" || response.Status.Value() == "pendingAcceptance") {
 				return nil
 			}
 		}
@@ -326,9 +366,12 @@ func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, 
 
 // deleteVpcEndpointService 删除 VPCEP-Server。
 func (r *NetConnectM1ToM3Resource) deleteVpcEndpointService(ctx context.Context, serverId string) error {
-	result := services.Delete(r.VpcepClient, serverId)
-	if result.Err != nil {
-		return fmt.Errorf("删除 VPCEP-Server 失败: %s", result.Err.Error())
+	request := &model.DeleteEndpointServiceRequest{
+		VpcEndpointServiceId: serverId,
+	}
+	_, err := r.VpcepClient.DeleteEndpointService(request)
+	if err != nil {
+		return fmt.Errorf("删除 VPCEP-Server 失败: %w", err)
 	}
 	return nil
 }
@@ -336,9 +379,12 @@ func (r *NetConnectM1ToM3Resource) deleteVpcEndpointService(ctx context.Context,
 // deleteVpcEndpoint 删除 VPCEP-Client。
 func (r *NetConnectM1ToM3Resource) deleteVpcEndpoint(ctx context.Context, clientId string) error {
 	// TODO: 使用 M1 客户端
-	result := endpoints.Delete(r.VpcepClient, clientId)
-	if result.Err != nil {
-		return fmt.Errorf("删除 VPCEP-Client 失败: %s", result.Err.Error())
+	request := &model.DeleteEndpointRequest{
+		VpcEndpointId: clientId,
+	}
+	_, err := r.VpcepClient.DeleteEndpoint(request)
+	if err != nil {
+		return fmt.Errorf("删除 VPCEP-Client 失败: %w", err)
 	}
 	return nil
 }
@@ -408,43 +454,46 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 
 	// 查询 VPCEP-Server 状态
 	if serverId != "" {
-		server, err := services.Get(r.VpcepClient, serverId).Extract()
+		request := &model.ListServiceDetailsRequest{
+			VpcEndpointServiceId: serverId,
+		}
+		response, err := r.VpcepClient.ListServiceDetails(request)
 		if err != nil {
-			if _, ok := err.(golangsdk.ErrDefault404); ok {
-				tflog.Warn(ctx, "VPCEP-Server 不存在，标记为已删除")
-				state.VpcepServerId = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("查询 VPCEP-Server 状态失败", err.Error())
-				return
-			}
+			// 如果服务不存在，认为已被删除
+			tflog.Warn(ctx, "VPCEP-Server 不存在，标记为已删除", map[string]interface{}{
+				"server_id": serverId,
+			})
+			state.VpcepServerId = types.StringNull()
 		} else {
 			tflog.Debug(ctx, "VPCEP-Server 当前状态", map[string]interface{}{
 				"server_id": serverId,
-				"status":    server.Status,
+				"status":    response.Status,
 			})
 		}
 	}
 
 	// 查询 VPCEP-Client 状态
 	if clientId != "" {
-		// TODO: 使用 M1 客户端
-		endpoint, err := endpoints.Get(r.VpcepClient, clientId).Extract()
+		request := &model.ListEndpointInfoDetailsRequest{
+			VpcEndpointId: clientId,
+		}
+		response, err := r.VpcepClient.ListEndpointInfoDetails(request)
 		if err != nil {
-			if _, ok := err.(golangsdk.ErrDefault404); ok {
-				tflog.Warn(ctx, "VPCEP-Client 不存在，标记为已删除")
-				state.VpcepClientId = types.StringNull()
-				state.VpcepClientIp = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("查询 VPCEP-Client 状态失败", err.Error())
-				return
-			}
+			// 如果客户端不存在，认为已被删除
+			tflog.Warn(ctx, "VPCEP-Client 不存在，标记为已删除", map[string]interface{}{
+				"client_id": clientId,
+			})
+			state.VpcepClientId = types.StringNull()
+			state.VpcepClientIp = types.StringNull()
 		} else {
 			tflog.Debug(ctx, "VPCEP-Client 当前状态", map[string]interface{}{
 				"client_id": clientId,
-				"status":    endpoint.Status,
-				"ip":        endpoint.IPAddr,
+				"status":    response.Status,
+				"ip":        response.Ip,
 			})
-			state.VpcepClientIp = types.StringValue(endpoint.IPAddr)
+			if response.Ip != nil {
+				state.VpcepClientIp = types.StringValue(*response.Ip)
+			}
 		}
 	}
 

@@ -4,20 +4,23 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/chnsz/golangsdk"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/region"
+	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
 // KkemProviderData M1/M3 网络打通 Provider 数据结构，Configure 阶段初始化。
 type KkemProviderData struct {
-	M1VpcepClient *golangsdk.ServiceClient // M1+ 侧 VPCEP 客户端
-	M3VpcepClient *golangsdk.ServiceClient // M3 侧 VPCEP 客户端
-	M3DnsClient   *golangsdk.ServiceClient  // M3 侧华为云标准 DNS 客户端 (TODO)
+	M1VpcepClient *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端
+	M3VpcepClient *vpcep.VpcepClient // M3 侧 VPCEP 客户端
+	M3DnsClient   interface{}         // M3 侧华为云标准 DNS 客户端 (TODO)
 	M1Ak          types.String
 	M1Sk          types.String
 	M1ProjectId   types.String
@@ -86,34 +89,26 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 	}
 }
 
-// newServiceClient 创建 golangsdk ServiceClient（用于 VPCEP/DNS）。
-func newServiceClient(ak, sk, projectId, region, service string) (*golangsdk.ServiceClient, error) {
-	// 创建 ProviderClient
-	providerClient := &golangsdk.ProviderClient{
-		IdentityEndpoint: "",
-		ProjectID:        projectId,
-		AKSKAuthOptions: golangsdk.AKSKAuthOptions{
-			AccessKey:       ak,
-			SecretKey:       sk,
-			ProjectId:       projectId,
-			Region:          region,
-			SecurityToken:   "",
-			WithUserCatalog: true,
-		},
-	}
+// newVpcepClient 创建 VPCEP 客户端（使用 huaweicloud-sdk-go-v3）。
+func newVpcepClient(ak, sk, projectId, regionId string) (*vpcep.VpcepClient, error) {
+	// 构建 AK/SK 鉴权信息
+	credentials := basic.NewCredentialsBuilder().
+		WithAk(ak).
+		WithSk(sk).
+		WithProjectId(projectId).
+		Build()
 
-	// 构建 endpoint
-	endpoint := fmt.Sprintf("https://%s.%s.myhuaweicloud.com/", service, region)
-	resourceBase := fmt.Sprintf("%sv1/%s/", endpoint, projectId)
+	// 构建 Region
+	reg := region.NewRegion(regionId, "")
 
-	// 创建 ServiceClient
-	serviceClient := &golangsdk.ServiceClient{
-		ProviderClient: providerClient,
-		Endpoint:      endpoint,
-		ResourceBase:  resourceBase,
-	}
+	// 构建 HTTP Client
+	hcClient := core.NewHcHttpClientBuilder().
+		WithCredential(credentials).
+		WithRegion(reg).
+		WithEndpoint(fmt.Sprintf("https://vpcep.%s.myhuaweicloud.com", regionId)).
+		Build()
 
-	return serviceClient, nil
+	return vpcep.NewVpcepClient(hcClient), nil
 }
 
 // Configure 读取配置字段并初始化 M1/M3 两套客户端。
@@ -129,12 +124,11 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	region := data.Region.ValueString()
 
 	// 构建 M1+ 侧 VPCEP 客户端
-	m1VpcepClient, err := newServiceClient(
+	m1VpcepClient, err := newVpcepClient(
 		data.M1Ak.ValueString(),
 		data.M1Sk.ValueString(),
 		data.M1ProjectId.ValueString(),
 		region,
-		"vpcep",
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M1+ VPCEP 客户端失败", err.Error())
@@ -142,34 +136,20 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	// 构建 M3 侧 VPCEP 客户端
-	m3VpcepClient, err := newServiceClient(
+	m3VpcepClient, err := newVpcepClient(
 		data.M3Ak.ValueString(),
 		data.M3Sk.ValueString(),
 		data.M3ProjectId.ValueString(),
 		region,
-		"vpcep",
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M3 VPCEP 客户端失败", err.Error())
 		return
 	}
 
-	// 构建 M3 侧 DNS 客户端（TODO）
-	m3DnsClient, err := newServiceClient(
-		data.M3Ak.ValueString(),
-		data.M3Sk.ValueString(),
-		data.M3ProjectId.ValueString(),
-		region,
-		"dns",
-	)
-	if err != nil {
-		resp.Diagnostics.AddError("创建 M3 DNS 客户端失败", err.Error())
-		return
-	}
-
 	data.M1VpcepClient = m1VpcepClient
 	data.M3VpcepClient = m3VpcepClient
-	data.M3DnsClient = m3DnsClient
+	// TODO: M3DnsClient 暂未实现
 
 	tflog.Debug(ctx, "KkemProviderData 初始化完成", map[string]interface{}{
 		"region":        region,
