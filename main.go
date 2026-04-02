@@ -6,7 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/kkem/terraform-provider-kkem/internal/provider"
+	"huawei.com/kkem/kkem-net-provider/internal/provider"
 )
 
 func main() {
