@@ -20,7 +20,7 @@ import (
 type KkemProviderData struct {
 	M1VpcepClient *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端
 	M3VpcepClient *vpcep.VpcepClient // M3 侧 VPCEP 客户端
-	M3DnsClient   interface{}         // M3 侧华为云标准 DNS 客户端 (TODO)
+	M3DnsClient   interface{}        // M3 侧华为云标准 DNS 客户端 (TODO)
 	M1Ak          types.String
 	M1Sk          types.String
 	M1ProjectId   types.String
@@ -89,24 +89,34 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 	}
 }
 
-// newVpcepClient 创建 VPCEP 客户端（使用 huaweicloud-sdk-go-v3）。
-func newVpcepClient(ak, sk, projectId, regionId string) (*vpcep.VpcepClient, error) {
+// newVpcepClient 创建 VPCEP 客户端。
+func newVpcepClient(ctx context.Context, ak, sk, projectId, regionId string) (*vpcep.VpcepClient, error) {
 	// 构建 AK/SK 鉴权信息
-	credentials := basic.NewCredentialsBuilder().
+	credentials, err := basic.NewCredentialsBuilder().
 		WithAk(ak).
 		WithSk(sk).
 		WithProjectId(projectId).
-		Build()
+		SafeBuild()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to init credential with ak/sk: %w", err)
+	}
 
 	// 构建 Region
 	reg := region.NewRegion(regionId, "")
 
+	endpoint := fmt.Sprintf("https://vpcep.%s.myhuaweicloud.com", regionId)
+
 	// 构建 HTTP Client
-	hcClient := core.NewHcHttpClientBuilder().
+	hcClient, err := core.NewHcHttpClientBuilder().
 		WithCredential(credentials).
 		WithRegion(reg).
-		WithEndpoint(fmt.Sprintf("https://vpcep.%s.myhuaweicloud.com", regionId)).
-		Build()
+		WithEndpoint(endpoint).
+		SafeBuild()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to init client with region %s, endpoint %s: %w", reg, endpoint, err)
+	}
 
 	return vpcep.NewVpcepClient(hcClient), nil
 }
@@ -125,10 +135,11 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 
 	// 构建 M1+ 侧 VPCEP 客户端
 	tflog.Info(ctx, "开始初始化 M1+ VPCEP 客户端", map[string]interface{}{
-		"region":      region,
+		"region":     region,
 		"project_id": data.M1ProjectId.ValueString(),
 	})
 	m1VpcepClient, err := newVpcepClient(
+		ctx,
 		data.M1Ak.ValueString(),
 		data.M1Sk.ValueString(),
 		data.M1ProjectId.ValueString(),
@@ -139,16 +150,17 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 	tflog.Info(ctx, "M1+ VPCEP 客户端初始化成功", map[string]interface{}{
-		"region":      region,
+		"region":     region,
 		"project_id": data.M1ProjectId.ValueString(),
 	})
 
 	// 构建 M3 侧 VPCEP 客户端
 	tflog.Info(ctx, "开始初始化 M3 VPCEP 客户端", map[string]interface{}{
-		"region":      region,
+		"region":     region,
 		"project_id": data.M3ProjectId.ValueString(),
 	})
 	m3VpcepClient, err := newVpcepClient(
+		ctx,
 		data.M3Ak.ValueString(),
 		data.M3Sk.ValueString(),
 		data.M3ProjectId.ValueString(),
@@ -159,7 +171,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 	tflog.Info(ctx, "M3 VPCEP 客户端初始化成功", map[string]interface{}{
-		"region":      region,
+		"region":     region,
 		"project_id": data.M3ProjectId.ValueString(),
 	})
 

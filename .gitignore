@@ -9,3 +9,6 @@ terraform-provider-kkem
 *.tfstate
 *.tfstate.backup
 .terraform.lock.hcl
+
+.codemate
+.idea
