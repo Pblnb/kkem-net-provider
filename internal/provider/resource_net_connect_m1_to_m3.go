@@ -2,37 +2,32 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
-	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
 // NetConnectM1ToM3Resource M1→M3 网络打通 Resource。
 type NetConnectM1ToM3Resource struct {
-	M3VpcepClient *vpcep.VpcepClient // M3 侧 VPCEP 客户端（用于创建 VPCEP-Server）
-	M1VpcepClient *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端（用于创建 VPCEP-Client）
+	M3VpcepClient interface{} // M3 侧 VPCEP 客户端（用于创建 VPCEP-Server）
+	M1VpcepClient interface{} // M1+ 侧 VPCEP 客户端（用于创建 VPCEP-Client）
 	DnsClient     interface{}
 }
 
 // NetConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
 type NetConnectM1ToM3Model struct {
 	// Required 字段
-	M3VpcId            types.String       `tfsdk:"m3_vpc_id"`
-	M3BackendType      types.String       `tfsdk:"m3_backend_type"`
-	M3BackendId        types.String       `tfsdk:"m3_backend_id"`
-	M3VpcepServerPorts []VpcepPortBlock   `tfsdk:"m3_vpcep_server_ports"`
-	M1VpcId            types.String       `tfsdk:"m1_vpc_id"`
-	M1SubnetId         types.String       `tfsdk:"m1_subnet_id"`
-	DnsApplicant       types.String       `tfsdk:"dns_applicant"`
-	DnsDomain          types.String       `tfsdk:"dns_domain"`
-	DnsDomainSuffix    types.String       `tfsdk:"dns_domain_suffix"`
+	M3VpcId            types.String     `tfsdk:"m3_vpc_id"`
+	M3BackendType      types.String     `tfsdk:"m3_backend_type"`
+	M3BackendId        types.String     `tfsdk:"m3_backend_id"`
+	M3VpcepServerPorts []VpcepPortBlock `tfsdk:"m3_vpcep_server_ports"`
+	M1VpcId            types.String     `tfsdk:"m1_vpc_id"`
+	M1SubnetId         types.String     `tfsdk:"m1_subnet_id"`
+	DnsApplicant       types.String     `tfsdk:"dns_applicant"`
+	DnsDomain          types.String     `tfsdk:"dns_domain"`
+	DnsDomainSuffix    types.String     `tfsdk:"dns_domain_suffix"`
 	// Computed 字段
 	VpcepServerId types.String `tfsdk:"vpcep_server_id"`
 	VpcepClientId types.String `tfsdk:"vpcep_client_id"`
@@ -44,32 +39,6 @@ type VpcepPortBlock struct {
 	ClientPort types.String `tfsdk:"client_port"`
 	ServerPort types.String `tfsdk:"server_port"`
 	Protocol   types.String `tfsdk:"protocol"`
-}
-
-// stringToPortListProtocol 将字符串转换为 PortListProtocol 枚举。
-func stringToPortListProtocol(s string) (*model.PortListProtocol, error) {
-	var p model.PortListProtocol
-	jsonBytes, err := json.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(jsonBytes, &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
-}
-
-// stringToServerType 将字符串转换为 CreateEndpointServiceRequestBodyServerType 枚举。
-func stringToServerType(s string) (model.CreateEndpointServiceRequestBodyServerType, error) {
-	var st model.CreateEndpointServiceRequestBodyServerType
-	jsonBytes, err := json.Marshal(s)
-	if err != nil {
-		return st, err
-	}
-	if err := json.Unmarshal(jsonBytes, &st); err != nil {
-		return st, err
-	}
-	return st, nil
 }
 
 // NewNetConnectM1ToM3Resource 创建 M1→M3 网络打通 Resource 实例。
@@ -156,280 +125,125 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 	r.M3VpcepClient = data.M3VpcepClient
 	r.M1VpcepClient = data.M1VpcepClient
 	r.DnsClient = data.M3DnsClient
+
+	tflog.Debug(ctx, "NetConnectM1ToM3Resource Configure 完成", map[string]interface{}{
+		"has_m3_client": r.M3VpcepClient != nil,
+		"has_m1_client": r.M1VpcepClient != nil,
+		"has_dns_client": r.DnsClient != nil,
+	})
 }
 
 // Create 执行 M1→M3 网络打通的完整创建流程：
-// Step 1 - 在 M3 侧创建 VPCEP-Server
-// Step 2 - 配置 VPCEP-Server 白名单（当前跳过，approval_enabled=false）
-// Step 3 - 在 M1+ 侧创建 VPCEP-Client
-// Step 4 - 轮询等待 Client 状态就绪
+// Step 1 - 在 M3 侧创建 VPCEP-Server（TODO）
+// Step 2 - 配置 VPCEP-Server 白名单（当前跳过，approval_enabled=false）（TODO）
+// Step 3 - 在 M1+ 侧创建 VPCEP-Client（TODO）
+// Step 4 - 轮询等待 Client 状态就绪（TODO）
 // Step 5 - 调用内网 DNS API 创建解析记录（TODO）
 func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	tflog.Info(ctx, "[M1→M3] Create 方法入口", map[string]interface{}{
+		"method":    "Create",
+		"resource": "kkem_net_connect_m1_to_m3",
+	})
+
 	// 解析配置
 	var plan NetConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Debug(ctx, "开始创建 M1→M3 网络打通", map[string]interface{}{
-		"m3_vpc_id":      plan.M3VpcId.ValueString(),
-		"m3_backend_id":  plan.M3BackendId.ValueString(),
-		"m1_vpc_id":      plan.M1VpcId.ValueString(),
-		"dns_applicant":   plan.DnsApplicant.ValueString(),
-		"dns_domain":      plan.DnsDomain.ValueString(),
-	})
-
-	// ========== Step 1 - 在 M3 侧创建 VPCEP-Server ==========
-	tflog.Info(ctx, "Step 1: 在 M3 侧创建 VPCEP-Server")
-	serverId, err := r.createVpcEndpointService(ctx, &plan)
-	if err != nil {
-		resp.Diagnostics.AddError("创建 VPCEP-Server 失败", err.Error())
-		return
-	}
-	tflog.Info(ctx, "VPCEP-Server 创建成功", map[string]interface{}{
-		"server_id": serverId,
-	})
-
-	// ========== Step 3 - 在 M1+ 侧创建 VPCEP-Client ==========
-	tflog.Info(ctx, "Step 3: 在 M1+ 侧创建 VPCEP-Client")
-	clientId, clientIp, err := r.createVpcEndpoint(ctx, serverId, &plan)
-	if err != nil {
-		// 创建失败时清理已创建的 Server
-		tflog.Warn(ctx, "创建 VPCEP-Client 失败，删除 VPCEP-Server", map[string]interface{}{
-			"server_id": serverId,
+		tflog.Error(ctx, "[M1→M3] 解析配置失败", map[string]interface{}{
+			"diagnostics": resp.Diagnostics.Errors(),
 		})
-		_ = r.deleteVpcEndpointService(ctx, serverId)
-		resp.Diagnostics.AddError("创建 VPCEP-Client 失败", err.Error())
 		return
 	}
-	tflog.Info(ctx, "VPCEP-Client 创建成功", map[string]interface{}{
-		"client_id": clientId,
-		"client_ip": clientIp,
+
+	tflog.Debug(ctx, "[M1→M3] 创建请求参数", map[string]interface{}{
+		"m3_vpc_id":           plan.M3VpcId.ValueString(),
+		"m3_backend_type":     plan.M3BackendType.ValueString(),
+		"m3_backend_id":       plan.M3BackendId.ValueString(),
+		"m3_vpcep_server_ports": plan.M3VpcepServerPorts,
+		"m1_vpc_id":           plan.M1VpcId.ValueString(),
+		"m1_subnet_id":        plan.M1SubnetId.ValueString(),
+		"dns_applicant":       plan.DnsApplicant.ValueString(),
+		"dns_domain":          plan.DnsDomain.ValueString(),
+		"dns_domain_suffix":   plan.DnsDomainSuffix.ValueString(),
 	})
 
-	// ========== Step 4 - 轮询等待 Client 状态就绪 ==========
-	tflog.Info(ctx, "Step 4: 轮询等待 VPCEP-Client 状态就绪")
-	if err := r.waitForVpcEndpointReady(ctx, r.M1VpcepClient, clientId); err != nil {
-		resp.Diagnostics.AddError("等待 VPCEP-Client 就绪超时", err.Error())
-		return
-	}
-	tflog.Info(ctx, "VPCEP-Client 状态就绪")
+	// ========== Step 1 - 在 M3 侧创建 VPCEP-Server（TODO）==========
+	tflog.Info(ctx, "[M1→M3] Step 1: 在 M3 侧创建 VPCEP-Server", map[string]interface{}{
+		"step":      1,
+		"m3_vpc_id": plan.M3VpcId.ValueString(),
+		"m3_backend_id": plan.M3BackendId.ValueString(),
+	})
+	// TODO: 实现 M3 侧 VPCEP-Server 创建逻辑
+	// 1. 构建端口映射: model.PortList{ClientPort, ServerPort, Protocol}
+	// 2. 调用 r.M3VpcepClient.CreateEndpointService(request)
+	// 3. 返回 serverId
+
+	// ========== Step 2 - 配置 VPCEP-Server 白名单（TODO）==========
+	tflog.Info(ctx, "[M1→M3] Step 2: 配置 VPCEP-Server 白名单", map[string]interface{}{
+		"step":  2,
+		"note":  "当前跳过，approval_enabled=false",
+	})
+	// TODO: 如果需要审批，配置白名单逻辑
+	// 调用 r.M3VpcepClient.AddOrRemoveServicePermissions(request)
+
+	// ========== Step 3 - 在 M1+ 侧创建 VPCEP-Client（TODO）==========
+	tflog.Info(ctx, "[M1→M3] Step 3: 在 M1+ 侧创建 VPCEP-Client", map[string]interface{}{
+		"step":        3,
+		"m1_vpc_id":   plan.M1VpcId.ValueString(),
+		"m1_subnet_id": plan.M1SubnetId.ValueString(),
+	})
+	// TODO: 实现 M1+ 侧 VPCEP-Client 创建逻辑
+	// 1. 构建请求: model.CreateEndpointRequestBody{EndpointServiceId, VpcId, SubnetId, EnableDns}
+	// 2. 调用 r.M1VpcepClient.CreateEndpoint(request)
+	// 3. 返回 clientId, clientIp
+
+	// ========== Step 4 - 轮询等待 Client 状态就绪（TODO）==========
+	tflog.Info(ctx, "[M1→M3] Step 4: 轮询等待 VPCEP-Client 状态就绪", map[string]interface{}{
+		"step": 4,
+	})
+	// TODO: 实现轮询等待逻辑
+	// 调用 r.M1VpcepClient.ListEndpointInfoDetails(request)
+	// 轮询间隔: 5s，最大重试: 60次
+	// 终态判断: status == "accepted" || status == "pendingAcceptance"
 
 	// ========== Step 5 - 调用内网 DNS API 创建解析记录（TODO）==========
-	tflog.Info(ctx, "Step 5: 调用内网 DNS API 创建解析记录（TODO）")
+	tflog.Info(ctx, "[M1→M3] Step 5: 调用内网 DNS API 创建解析记录", map[string]interface{}{
+		"step":            5,
+		"dns_applicant":   plan.DnsApplicant.ValueString(),
+		"dns_domain":      plan.DnsDomain.ValueString(),
+		"dns_domain_suffix": plan.DnsDomainSuffix.ValueString(),
+		"note":            "TODO: DNS 内网 API 暂不实现",
+	})
 	// TODO: 实现内网 DNS API 调用
 	// dnsApi.CreateRecord(dnsApplicant, dnsDomain, dnsDomainSuffix, clientIp)
 
-	// 设置状态
-	plan.VpcepServerId = types.StringValue(serverId)
-	plan.VpcepClientId = types.StringValue(clientId)
-	plan.VpcepClientIp = types.StringValue(clientIp)
+	// 设置状态（框架占位，模拟成功返回）
+	tflog.Info(ctx, "[M1→M3] 设置资源状态", map[string]interface{}{
+		"vpcep_server_id": "TODO_SERVER_ID",
+		"vpcep_client_id": "TODO_CLIENT_ID",
+		"vpcep_client_ip": "TODO_CLIENT_IP",
+	})
+	plan.VpcepServerId = types.StringValue("TODO_SERVER_ID")
+	plan.VpcepClientId = types.StringValue("TODO_CLIENT_ID")
+	plan.VpcepClientIp = types.StringValue("TODO_CLIENT_IP")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-}
 
-// createVpcEndpointService 在 M3 侧创建 VPCEP-Server。
-func (r *NetConnectM1ToM3Resource) createVpcEndpointService(ctx context.Context, plan *NetConnectM1ToM3Model) (string, error) {
-	// 构建端口映射
-	var ports []model.PortList
-	for _, port := range plan.M3VpcepServerPorts {
-		var clientPort, serverPort int32
-		fmt.Sscanf(port.ClientPort.ValueString(), "%d", &clientPort)
-		fmt.Sscanf(port.ServerPort.ValueString(), "%d", &serverPort)
-
-		protocol, err := stringToPortListProtocol(port.Protocol.ValueString())
-		if err != nil {
-			return "", fmt.Errorf("转换协议类型失败: %w", err)
-		}
-
-		ports = append(ports, model.PortList{
-			ClientPort: &clientPort,
-			ServerPort: &serverPort,
-			Protocol:   protocol,
-		})
-	}
-
-	// approval_enabled=false 表示不需要审批
-	approvalEnabled := false
-	serverType, err := stringToServerType(plan.M3BackendType.ValueString())
-	if err != nil {
-		return "", fmt.Errorf("转换服务器类型失败: %w", err)
-	}
-	createOpts := &model.CreateEndpointServiceRequestBody{
-		PortId:          plan.M3BackendId.ValueString(),
-		VpcId:           plan.M3VpcId.ValueString(),
-		ServerType:      serverType,
-		ApprovalEnabled: &approvalEnabled,
-		Ports:           ports,
-	}
-
-	tflog.Debug(ctx, "创建 VPCEP-Server 请求参数", map[string]interface{}{
-		"vpc_id":      createOpts.VpcId,
-		"port_id":     createOpts.PortId,
-		"server_type": serverType.Value(),
+	tflog.Info(ctx, "[M1→M3] Create 方法出口", map[string]interface{}{
+		"method":          "Create",
+		"resource":        "kkem_net_connect_m1_to_m3",
+		"vpcep_server_id": plan.VpcepServerId.ValueString(),
+		"vpcep_client_id": plan.VpcepClientId.ValueString(),
 	})
-
-	request := &model.CreateEndpointServiceRequest{
-		Body: createOpts,
-	}
-
-	response, err := r.M3VpcepClient.CreateEndpointService(request)
-	if err != nil {
-		return "", fmt.Errorf("创建 VPCEP-Server 失败: %w", err)
-	}
-
-	if response.Id == nil {
-		return "", fmt.Errorf("创建 VPCEP-Server 成功但未返回 ID")
-	}
-
-	return *response.Id, nil
-}
-
-// createVpcEndpoint 在 M1+ 侧创建 VPCEP-Client。
-func (r *NetConnectM1ToM3Resource) createVpcEndpoint(ctx context.Context, serverId string, plan *NetConnectM1ToM3Model) (string, string, error) {
-	enableDNS := false
-	subnetId := plan.M1SubnetId.ValueString()
-	createOpts := &model.CreateEndpointRequestBody{
-		EndpointServiceId: serverId,
-		VpcId:              plan.M1VpcId.ValueString(),
-		SubnetId:           &subnetId,
-		EnableDns:          &enableDNS,
-	}
-
-	tflog.Debug(ctx, "创建 VPCEP-Client 请求参数", map[string]interface{}{
-		"endpoint_service_id": createOpts.EndpointServiceId,
-		"vpc_id":             createOpts.VpcId,
-		"subnet_id":          createOpts.SubnetId,
-	})
-
-	request := &model.CreateEndpointRequest{
-		Body: createOpts,
-	}
-
-	response, err := r.M1VpcepClient.CreateEndpoint(request)
-	if err != nil {
-		return "", "", fmt.Errorf("创建 VPCEP-Client 失败: %w", err)
-	}
-
-	if response.Id == nil {
-		return "", "", fmt.Errorf("创建 VPCEP-Client 成功但未返回 ID")
-	}
-
-	return *response.Id, "", nil
-}
-
-// waitForVpcEndpointReady 轮询等待 VPCEP-Client 状态就绪。
-func (r *NetConnectM1ToM3Resource) waitForVpcEndpointReady(ctx context.Context, client *vpcep.VpcepClient, clientId string) error {
-	const (
-		pollInterval = 5 * time.Second
-		maxRetries   = 60
-	)
-
-	for i := 0; i < maxRetries; i++ {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("等待 VPCEP-Client 就绪超时: %s", clientId)
-		case <-time.After(pollInterval):
-			request := &model.ListEndpointInfoDetailsRequest{
-				VpcEndpointId: clientId,
-			}
-			response, err := client.ListEndpointInfoDetails(request)
-			if err != nil {
-				tflog.Warn(ctx, "查询 VPCEP-Client 状态失败", map[string]interface{}{
-					"client_id": clientId,
-					"error":     err.Error(),
-				})
-				continue
-			}
-
-			tflog.Debug(ctx, "VPCEP-Client 当前状态", map[string]interface{}{
-				"client_id": clientId,
-				"status":    response.Status,
-			})
-
-			// 终态: accepted 或 pendingAcceptance（取决于是否需要审批）
-			if response.Status != nil && (response.Status.Value() == "accepted" || response.Status.Value() == "pendingAcceptance") {
-				return nil
-			}
-		}
-	}
-
-	return fmt.Errorf("等待 VPCEP-Client 就绪超时（已达最大重试次数）: %s", clientId)
-}
-
-// deleteVpcEndpointService 删除 VPCEP-Server。
-func (r *NetConnectM1ToM3Resource) deleteVpcEndpointService(ctx context.Context, serverId string) error {
-	request := &model.DeleteEndpointServiceRequest{
-		VpcEndpointServiceId: serverId,
-	}
-	_, err := r.M3VpcepClient.DeleteEndpointService(request)
-	if err != nil {
-		return fmt.Errorf("删除 VPCEP-Server 失败: %w", err)
-	}
-	return nil
-}
-
-// deleteVpcEndpoint 删除 VPCEP-Client。
-func (r *NetConnectM1ToM3Resource) deleteVpcEndpoint(ctx context.Context, clientId string) error {
-	request := &model.DeleteEndpointRequest{
-		VpcEndpointId: clientId,
-	}
-	_, err := r.M1VpcepClient.DeleteEndpoint(request)
-	if err != nil {
-		return fmt.Errorf("删除 VPCEP-Client 失败: %w", err)
-	}
-	return nil
-}
-
-// Delete 执行 M1→M3 网络打通的完整删除流程：
-// Step 1 - 调用内网 DNS API 删除解析记录（TODO）
-// Step 2 - 删除 M1+ 侧 VPCEP-Client
-// Step 3 - 删除 M3 侧 VPCEP-Server
-func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	// 解析状态
-	var state NetConnectM1ToM3Model
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	serverId := state.VpcepServerId.ValueString()
-	clientId := state.VpcepClientId.ValueString()
-
-	tflog.Debug(ctx, "开始删除 M1→M3 网络打通", map[string]interface{}{
-		"vpcep_server_id": serverId,
-		"vpcep_client_id": clientId,
-	})
-
-	// ========== Step 1 - 调用内网 DNS API 删除解析记录（TODO）==========
-	tflog.Info(ctx, "Step 1: 调用内网 DNS API 删除解析记录（TODO）")
-	// TODO: 实现内网 DNS API 调用
-	// dnsApi.DeleteRecord(dnsApplicant, dnsDomain, dnsDomainSuffix)
-
-	// ========== Step 2 - 删除 M1+ 侧 VPCEP-Client ==========
-	if clientId != "" {
-		tflog.Info(ctx, "Step 2: 删除 M1+ 侧 VPCEP-Client")
-		if err := r.deleteVpcEndpoint(ctx, clientId); err != nil {
-			resp.Diagnostics.AddError("删除 VPCEP-Client 失败", err.Error())
-			return
-		}
-		tflog.Info(ctx, "VPCEP-Client 删除成功")
-	}
-
-	// ========== Step 3 - 删除 M3 侧 VPCEP-Server ==========
-	if serverId != "" {
-		tflog.Info(ctx, "Step 3: 删除 M3 侧 VPCEP-Server")
-		if err := r.deleteVpcEndpointService(ctx, serverId); err != nil {
-			resp.Diagnostics.AddError("删除 VPCEP-Server 失败", err.Error())
-			return
-		}
-		tflog.Info(ctx, "VPCEP-Server 删除成功")
-	}
 }
 
 // Read 读取当前 M1→M3 网络打通状态。
 func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	tflog.Info(ctx, "[M1→M3] Read 方法入口", map[string]interface{}{
+		"method":    "Read",
+		"resource": "kkem_net_connect_m1_to_m3",
+	})
+
 	// 解析状态
 	var state NetConnectM1ToM3Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -437,66 +251,134 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
+	tflog.Debug(ctx, "[M1→M3] 读取资源状态", map[string]interface{}{
+		"vpcep_server_id": state.VpcepServerId.ValueString(),
+		"vpcep_client_id": state.VpcepClientId.ValueString(),
+	})
+
 	serverId := state.VpcepServerId.ValueString()
 	clientId := state.VpcepClientId.ValueString()
 
-	tflog.Debug(ctx, "读取 M1→M3 网络打通状态", map[string]interface{}{
-		"vpcep_server_id": serverId,
-		"vpcep_client_id": clientId,
-	})
-
-	// 查询 VPCEP-Server 状态
-	if serverId != "" {
-		request := &model.ListServiceDetailsRequest{
-			VpcEndpointServiceId: serverId,
-		}
-		response, err := r.M3VpcepClient.ListServiceDetails(request)
-		if err != nil {
-			// 如果服务不存在，认为已被删除
-			tflog.Warn(ctx, "VPCEP-Server 不存在，标记为已删除", map[string]interface{}{
-				"server_id": serverId,
-			})
-			state.VpcepServerId = types.StringNull()
-		} else {
-			tflog.Debug(ctx, "VPCEP-Server 当前状态", map[string]interface{}{
-				"server_id": serverId,
-				"status":    response.Status,
-			})
-		}
+	// ========== Step 1 - 查询 VPCEP-Server 状态（TODO）==========
+	if serverId != "" && serverId != "TODO_SERVER_ID" {
+		tflog.Info(ctx, "[M1→M3] Step 1: 查询 VPCEP-Server 状态", map[string]interface{}{
+			"step":      1,
+			"server_id": serverId,
+		})
+		// TODO: 实现 VPCEP-Server 状态查询
+		// 调用 r.M3VpcepClient.ListServiceDetails(request)
+		// 如果服务不存在: state.VpcepServerId = types.StringNull()
+	} else {
+		tflog.Debug(ctx, "[M1→M3] VPCEP-Server 状态: TODO 占位符，跳过查询", map[string]interface{}{
+			"server_id": serverId,
+		})
 	}
 
-	// 查询 VPCEP-Client 状态
-	if clientId != "" {
-		request := &model.ListEndpointInfoDetailsRequest{
-			VpcEndpointId: clientId,
-		}
-		response, err := r.M1VpcepClient.ListEndpointInfoDetails(request)
-		if err != nil {
-			// 如果客户端不存在，认为已被删除
-			tflog.Warn(ctx, "VPCEP-Client 不存在，标记为已删除", map[string]interface{}{
-				"client_id": clientId,
-			})
-			state.VpcepClientId = types.StringNull()
-			state.VpcepClientIp = types.StringNull()
-		} else {
-			tflog.Debug(ctx, "VPCEP-Client 当前状态", map[string]interface{}{
-				"client_id": clientId,
-				"status":    response.Status,
-				"ip":        response.Ip,
-			})
-			if response.Ip != nil {
-				state.VpcepClientIp = types.StringValue(*response.Ip)
-			}
-		}
+	// ========== Step 2 - 查询 VPCEP-Client 状态（TODO）==========
+	if clientId != "" && clientId != "TODO_CLIENT_ID" {
+		tflog.Info(ctx, "[M1→M3] Step 2: 查询 VPCEP-Client 状态", map[string]interface{}{
+			"step":      2,
+			"client_id": clientId,
+		})
+		// TODO: 实现 VPCEP-Client 状态查询
+		// 调用 r.M1VpcepClient.ListEndpointInfoDetails(request)
+		// 如果客户端不存在: state.VpcepClientId = types.StringNull(); state.VpcepClientIp = types.StringNull()
+	} else {
+		tflog.Debug(ctx, "[M1→M3] VPCEP-Client 状态: TODO 占位符，跳过查询", map[string]interface{}{
+			"client_id": clientId,
+		})
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+
+	tflog.Info(ctx, "[M1→M3] Read 方法出口", map[string]interface{}{
+		"method":          "Read",
+		"resource":        "kkem_net_connect_m1_to_m3",
+		"vpcep_server_id": state.VpcepServerId.ValueString(),
+		"vpcep_client_id": state.VpcepClientId.ValueString(),
+	})
 }
 
 // Update 更新 M1→M3 网络打通（当前不支持）。
 func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	tflog.Info(ctx, "[M1→M3] Update 方法入口", map[string]interface{}{
+		"method":    "Update",
+		"resource": "kkem_net_connect_m1_to_m3",
+	})
+
 	resp.Diagnostics.AddError(
 		"更新操作不支持",
 		"M1→M3 网络打通资源不支持更新操作，如需变更请删除后重新创建",
 	)
+
+	tflog.Info(ctx, "[M1→M3] Update 方法出口", map[string]interface{}{
+		"method":    "Update",
+		"resource": "kkem_net_connect_m1_to_m3",
+		"supported": false,
+	})
+}
+
+// Delete 执行 M1→M3 网络打通的完整删除流程：
+// Step 1 - 调用内网 DNS API 删除解析记录（TODO）
+// Step 2 - 删除 M1+ 侧 VPCEP-Client（TODO）
+// Step 3 - 删除 M3 侧 VPCEP-Server（TODO）
+func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	tflog.Info(ctx, "[M1→M3] Delete 方法入口", map[string]interface{}{
+		"method":    "Delete",
+		"resource": "kkem_net_connect_m1_to_m3",
+	})
+
+	// 解析状态
+	var state NetConnectM1ToM3Model
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	tflog.Debug(ctx, "[M1→M3] 删除资源参数", map[string]interface{}{
+		"vpcep_server_id": state.VpcepServerId.ValueString(),
+		"vpcep_client_id": state.VpcepClientId.ValueString(),
+	})
+
+	// ========== Step 1 - 调用内网 DNS API 删除解析记录（TODO）==========
+	tflog.Info(ctx, "[M1→M3] Step 1: 调用内网 DNS API 删除解析记录", map[string]interface{}{
+		"step": 1,
+	})
+	// TODO: 实现内网 DNS API 删除调用
+	// dnsApi.DeleteRecord(dnsApplicant, dnsDomain, dnsDomainSuffix)
+
+	// ========== Step 2 - 删除 M1+ 侧 VPCEP-Client（TODO）==========
+	clientId := state.VpcepClientId.ValueString()
+	if clientId != "" && clientId != "TODO_CLIENT_ID" {
+		tflog.Info(ctx, "[M1→M3] Step 2: 删除 M1+ 侧 VPCEP-Client", map[string]interface{}{
+			"step":      2,
+			"client_id": clientId,
+		})
+		// TODO: 实现 VPCEP-Client 删除
+		// 调用 r.M1VpcepClient.DeleteEndpoint(request)
+	} else {
+		tflog.Debug(ctx, "[M1→M3] VPCEP-Client: TODO 占位符，跳过删除", map[string]interface{}{
+			"client_id": clientId,
+		})
+	}
+
+	// ========== Step 3 - 删除 M3 侧 VPCEP-Server（TODO）==========
+	serverId := state.VpcepServerId.ValueString()
+	if serverId != "" && serverId != "TODO_SERVER_ID" {
+		tflog.Info(ctx, "[M1→M3] Step 3: 删除 M3 侧 VPCEP-Server", map[string]interface{}{
+			"step":      3,
+			"server_id": serverId,
+		})
+		// TODO: 实现 VPCEP-Server 删除
+		// 调用 r.M3VpcepClient.DeleteEndpointService(request)
+	} else {
+		tflog.Debug(ctx, "[M1→M3] VPCEP-Server: TODO 占位符，跳过删除", map[string]interface{}{
+			"server_id": serverId,
+		})
+	}
+
+	tflog.Info(ctx, "[M1→M3] Delete 方法出口", map[string]interface{}{
+		"method":    "Delete",
+		"resource": "kkem_net_connect_m1_to_m3",
+	})
 }

@@ -124,6 +124,10 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	region := data.Region.ValueString()
 
 	// 构建 M1+ 侧 VPCEP 客户端
+	tflog.Info(ctx, "开始初始化 M1+ VPCEP 客户端", map[string]interface{}{
+		"region":      region,
+		"project_id": data.M1ProjectId.ValueString(),
+	})
 	m1VpcepClient, err := newVpcepClient(
 		data.M1Ak.ValueString(),
 		data.M1Sk.ValueString(),
@@ -134,8 +138,16 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		resp.Diagnostics.AddError("创建 M1+ VPCEP 客户端失败", err.Error())
 		return
 	}
+	tflog.Info(ctx, "M1+ VPCEP 客户端初始化成功", map[string]interface{}{
+		"region":      region,
+		"project_id": data.M1ProjectId.ValueString(),
+	})
 
 	// 构建 M3 侧 VPCEP 客户端
+	tflog.Info(ctx, "开始初始化 M3 VPCEP 客户端", map[string]interface{}{
+		"region":      region,
+		"project_id": data.M3ProjectId.ValueString(),
+	})
 	m3VpcepClient, err := newVpcepClient(
 		data.M3Ak.ValueString(),
 		data.M3Sk.ValueString(),
@@ -146,14 +158,21 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		resp.Diagnostics.AddError("创建 M3 VPCEP 客户端失败", err.Error())
 		return
 	}
+	tflog.Info(ctx, "M3 VPCEP 客户端初始化成功", map[string]interface{}{
+		"region":      region,
+		"project_id": data.M3ProjectId.ValueString(),
+	})
 
 	data.M1VpcepClient = m1VpcepClient
 	data.M3VpcepClient = m3VpcepClient
 	// TODO: M3DnsClient 暂未实现
 
-	tflog.Debug(ctx, "KkemProviderData 初始化完成", map[string]interface{}{
+	tflog.Info(ctx, "KkemProviderData 初始化完成", map[string]interface{}{
 		"region":        region,
 		"dns_applicant": data.DnsApplicant.ValueString(),
+		"m1_project_id": data.M1ProjectId.ValueString(),
+		"m3_project_id": data.M3ProjectId.ValueString(),
+		"resources":     []string{"kkem_net_connect_m1_to_m3", "kkem_net_connect_m3_to_m1"},
 	})
 
 	resp.ResourceData = &data
