@@ -1,8 +1,12 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package main
 
 import (
 	"context"
-	"flag"
+	"log"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
@@ -10,17 +14,17 @@ import (
 )
 
 func main() {
-	flag.Parse()
+	const ProviderVersion = "0.1.0"
 
 	err := providerserver.Serve(
 		context.Background(),
-		provider.New,
+		provider.NewKKEMProvider(ProviderVersion),
 		providerserver.ServeOpts{
-			Address: "kkem.internal/net/kkem",
+			Address: "huawei.com/provider/kkem",
 		},
 	)
 
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to start provider server: %v", err)
 	}
 }

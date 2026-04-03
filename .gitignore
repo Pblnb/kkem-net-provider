@@ -12,3 +12,6 @@ terraform-provider-kkem
 
 .codemate
 .idea
+
+# Agent Context File
+CLAUDE.md
