@@ -94,7 +94,9 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Update called")
-	resp.Diagnostics.AddError("update not supported", "M1→M3 resource does not support update operation")
+	var plan NetConnectM1ToM3Model
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest,

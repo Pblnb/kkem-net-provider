@@ -116,14 +116,14 @@ func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, err
 		SafeBuild()
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to init client with endpoint %s: %w", endpoint, err)
+		return nil, fmt.Errorf("failed to init vpcep client with endpoint %s: %w", endpoint, err)
 	}
 
 	return vpcep.NewVpcepClient(hcClient), nil
 }
 
-// buildVpcepClient builds VPCEP client with logging and error handling.
-func (p *KkemProvider) buildVpcepClient(ctx context.Context, label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
+func (p *KkemProvider) buildVpcepClient(ctx context.Context,
+	label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
 	client, err := newVpcepClient(ak, sk, projectId, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("create %s VPCEP client failed: %w", label, err)
