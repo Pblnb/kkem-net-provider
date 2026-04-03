@@ -122,16 +122,13 @@ func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, err
 	return vpcep.NewVpcepClient(hcClient), nil
 }
 
-// buildVpcepClient 构建 VPCEP 客户端，日志和错误处理封装在一起。
+// buildVpcepClient builds VPCEP client with logging and error handling.
 func (p *KkemProvider) buildVpcepClient(ctx context.Context, label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
-	tflog.Info(ctx, fmt.Sprintf("开始初始化 %s VPCEP 客户端", label), map[string]interface{}{
-		"endpoint": endpoint,
-	})
 	client, err := newVpcepClient(ak, sk, projectId, endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("创建 %s VPCEP 客户端失败: %w", label, err)
+		return nil, fmt.Errorf("create %s VPCEP client failed: %w", label, err)
 	}
-	tflog.Info(ctx, fmt.Sprintf("%s VPCEP 客户端初始化成功", label), map[string]interface{}{
+	tflog.Info(ctx, fmt.Sprintf("%s VPCEP client created", label), map[string]interface{}{
 		"endpoint": endpoint,
 	})
 	return client, nil
@@ -150,7 +147,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		data.M1PlusAk.ValueString(), data.M1PlusSk.ValueString(),
 		data.M1PlusProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("创建 M1+ VPCEP 客户端失败", err.Error())
+		resp.Diagnostics.AddError("create M1+ VPCEP client failed", err.Error())
 		return
 	}
 
@@ -158,7 +155,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		data.M3Ak.ValueString(), data.M3Sk.ValueString(),
 		data.M3ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("创建 M3 VPCEP 客户端失败", err.Error())
+		resp.Diagnostics.AddError("create M3 VPCEP client failed", err.Error())
 		return
 	}
 
@@ -167,7 +164,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		M3VpcepClient:     m3VpcepClient,
 	}
 
-	tflog.Info(ctx, "KkemProvider 初始化完成", map[string]interface{}{
+	tflog.Info(ctx, "KkemProvider initialized", map[string]interface{}{
 		"m1_plus_project_id": data.M1PlusProjectId.ValueString(),
 		"m3_project_id":      data.M3ProjectId.ValueString(),
 		"vpcep_endpoint":     data.VpcepEndpoint.ValueString(),
