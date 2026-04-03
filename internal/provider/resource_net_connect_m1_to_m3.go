@@ -127,8 +127,8 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 	r.DnsClient = data.M3DnsClient
 
 	tflog.Debug(ctx, "NetConnectM1ToM3Resource Configure 完成", map[string]interface{}{
-		"has_m3_client": r.M3VpcepClient != nil,
-		"has_m1_client": r.M1VpcepClient != nil,
+		"has_m3_client":  r.M3VpcepClient != nil,
+		"has_m1_client":  r.M1VpcepClient != nil,
 		"has_dns_client": r.DnsClient != nil,
 	})
 }
@@ -141,7 +141,7 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 // Step 5 - 调用内网 DNS API 创建解析记录（TODO）
 func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	tflog.Info(ctx, "[M1→M3] Create 方法入口", map[string]interface{}{
-		"method":    "Create",
+		"method":   "Create",
 		"resource": "kkem_net_connect_m1_to_m3",
 	})
 
@@ -156,21 +156,21 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	tflog.Debug(ctx, "[M1→M3] 创建请求参数", map[string]interface{}{
-		"m3_vpc_id":           plan.M3VpcId.ValueString(),
-		"m3_backend_type":     plan.M3BackendType.ValueString(),
-		"m3_backend_id":       plan.M3BackendId.ValueString(),
+		"m3_vpc_id":             plan.M3VpcId.ValueString(),
+		"m3_backend_type":       plan.M3BackendType.ValueString(),
+		"m3_backend_id":         plan.M3BackendId.ValueString(),
 		"m3_vpcep_server_ports": plan.M3VpcepServerPorts,
-		"m1_vpc_id":           plan.M1VpcId.ValueString(),
-		"m1_subnet_id":        plan.M1SubnetId.ValueString(),
-		"dns_applicant":       plan.DnsApplicant.ValueString(),
-		"dns_domain":          plan.DnsDomain.ValueString(),
-		"dns_domain_suffix":   plan.DnsDomainSuffix.ValueString(),
+		"m1_vpc_id":             plan.M1VpcId.ValueString(),
+		"m1_subnet_id":          plan.M1SubnetId.ValueString(),
+		"dns_applicant":         plan.DnsApplicant.ValueString(),
+		"dns_domain":            plan.DnsDomain.ValueString(),
+		"dns_domain_suffix":     plan.DnsDomainSuffix.ValueString(),
 	})
 
 	// ========== Step 1 - 在 M3 侧创建 VPCEP-Server（TODO）==========
 	tflog.Info(ctx, "[M1→M3] Step 1: 在 M3 侧创建 VPCEP-Server", map[string]interface{}{
-		"step":      1,
-		"m3_vpc_id": plan.M3VpcId.ValueString(),
+		"step":          1,
+		"m3_vpc_id":     plan.M3VpcId.ValueString(),
 		"m3_backend_id": plan.M3BackendId.ValueString(),
 	})
 	// TODO: 实现 M3 侧 VPCEP-Server 创建逻辑
@@ -180,16 +180,16 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// ========== Step 2 - 配置 VPCEP-Server 白名单（TODO）==========
 	tflog.Info(ctx, "[M1→M3] Step 2: 配置 VPCEP-Server 白名单", map[string]interface{}{
-		"step":  2,
-		"note":  "当前跳过，approval_enabled=false",
+		"step": 2,
+		"note": "当前跳过，approval_enabled=false",
 	})
 	// TODO: 如果需要审批，配置白名单逻辑
 	// 调用 r.M3VpcepClient.AddOrRemoveServicePermissions(request)
 
 	// ========== Step 3 - 在 M1+ 侧创建 VPCEP-Client（TODO）==========
 	tflog.Info(ctx, "[M1→M3] Step 3: 在 M1+ 侧创建 VPCEP-Client", map[string]interface{}{
-		"step":        3,
-		"m1_vpc_id":   plan.M1VpcId.ValueString(),
+		"step":         3,
+		"m1_vpc_id":    plan.M1VpcId.ValueString(),
 		"m1_subnet_id": plan.M1SubnetId.ValueString(),
 	})
 	// TODO: 实现 M1+ 侧 VPCEP-Client 创建逻辑
@@ -208,11 +208,11 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// ========== Step 5 - 调用内网 DNS API 创建解析记录（TODO）==========
 	tflog.Info(ctx, "[M1→M3] Step 5: 调用内网 DNS API 创建解析记录", map[string]interface{}{
-		"step":            5,
-		"dns_applicant":   plan.DnsApplicant.ValueString(),
-		"dns_domain":      plan.DnsDomain.ValueString(),
+		"step":              5,
+		"dns_applicant":     plan.DnsApplicant.ValueString(),
+		"dns_domain":        plan.DnsDomain.ValueString(),
 		"dns_domain_suffix": plan.DnsDomainSuffix.ValueString(),
-		"note":            "TODO: DNS 内网 API 暂不实现",
+		"note":              "TODO: DNS 内网 API 暂不实现",
 	})
 	// TODO: 实现内网 DNS API 调用
 	// dnsApi.CreateRecord(dnsApplicant, dnsDomain, dnsDomainSuffix, clientIp)
@@ -240,7 +240,7 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 // Read 读取当前 M1→M3 网络打通状态。
 func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "[M1→M3] Read 方法入口", map[string]interface{}{
-		"method":    "Read",
+		"method":   "Read",
 		"resource": "kkem_net_connect_m1_to_m3",
 	})
 
@@ -302,7 +302,7 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 // Update 更新 M1→M3 网络打通（当前不支持）。
 func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "[M1→M3] Update 方法入口", map[string]interface{}{
-		"method":    "Update",
+		"method":   "Update",
 		"resource": "kkem_net_connect_m1_to_m3",
 	})
 
@@ -313,7 +313,7 @@ func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 
 	tflog.Info(ctx, "[M1→M3] Update 方法出口", map[string]interface{}{
 		"method":    "Update",
-		"resource": "kkem_net_connect_m1_to_m3",
+		"resource":  "kkem_net_connect_m1_to_m3",
 		"supported": false,
 	})
 }
@@ -324,7 +324,7 @@ func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 // Step 3 - 删除 M3 侧 VPCEP-Server（TODO）
 func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	tflog.Info(ctx, "[M1→M3] Delete 方法入口", map[string]interface{}{
-		"method":    "Delete",
+		"method":   "Delete",
 		"resource": "kkem_net_connect_m1_to_m3",
 	})
 
@@ -378,7 +378,7 @@ func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 	}
 
 	tflog.Info(ctx, "[M1→M3] Delete 方法出口", map[string]interface{}{
-		"method":    "Delete",
+		"method":   "Delete",
 		"resource": "kkem_net_connect_m1_to_m3",
 	})
 }

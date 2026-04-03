@@ -12,23 +12,24 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/region"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
 // KkemProviderData M1/M3 网络打通 Provider 数据结构，Configure 阶段初始化。
 type KkemProviderData struct {
-	M1VpcepClient *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端
-	M3VpcepClient *vpcep.VpcepClient // M3 侧 VPCEP 客户端
-	M3DnsClient   interface{}        // M3 侧华为云标准 DNS 客户端 (TODO)
-	M1Ak          types.String
-	M1Sk          types.String
-	M1ProjectId   types.String
-	M3Ak          types.String
-	M3Sk          types.String
-	M3ProjectId   types.String
-	Region        types.String
-	DnsApplicant  types.String
+	M1VpcepClient    *vpcep.VpcepClient // M1+ 侧 VPCEP 客户端
+	M3VpcepClient    *vpcep.VpcepClient // M3 侧 VPCEP 客户端
+	M3DnsClient      interface{}        // M3 侧华为云标准 DNS 客户端 (TODO)
+	M1Ak             types.String
+	M1Sk             types.String
+	M1ProjectId      types.String
+	M1VpccepEndpoint types.String
+	M3Ak             types.String
+	M3Sk             types.String
+	M3ProjectId      types.String
+	M3VpccepEndpoint types.String
+	M3DnsEndpoint    types.String
+	DnsApplicant     types.String
 }
 
 // KkemProvider 实现 terraform-plugin-framework 的 provider.Provider 接口。
@@ -63,6 +64,10 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 				Optional:    true,
 				Description: "M1+ 侧 Project ID",
 			},
+			"m1_vpcep_endpoint": schema.StringAttribute{
+				Optional:    true,
+				Description: "M1+ 侧 VPCEP 服务 Endpoint，如 https://vpcep.cn-north-7.myhuaweicloud.com",
+			},
 			"m3_ak": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
@@ -77,9 +82,13 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 				Optional:    true,
 				Description: "M3 侧 Project ID",
 			},
-			"region": schema.StringAttribute{
+			"m3_vpcep_endpoint": schema.StringAttribute{
 				Optional:    true,
-				Description: "华为云 Region，如 cn-north-7",
+				Description: "M3 侧 VPCEP 服务 Endpoint，如 https://vpcep.cn-north-7.myhuaweicloud.com",
+			},
+			"m3_dns_endpoint": schema.StringAttribute{
+				Optional:    true,
+				Description: "M3 侧 DNS 服务 Endpoint（TODO: DNS 暂未实现）",
 			},
 			"dns_applicant": schema.StringAttribute{
 				Optional:    true,
@@ -90,7 +99,7 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 }
 
 // newVpcepClient 创建 VPCEP 客户端。
-func newVpcepClient(ctx context.Context, ak, sk, projectId, regionId string) (*vpcep.VpcepClient, error) {
+func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
 	// 构建 AK/SK 鉴权信息
 	credentials, err := basic.NewCredentialsBuilder().
 		WithAk(ak).
@@ -102,20 +111,14 @@ func newVpcepClient(ctx context.Context, ak, sk, projectId, regionId string) (*v
 		return nil, fmt.Errorf("failed to init credential with ak/sk: %w", err)
 	}
 
-	// 构建 Region
-	reg := region.NewRegion(regionId, "")
-
-	endpoint := fmt.Sprintf("https://vpcep.%s.myhuaweicloud.com", regionId)
-
 	// 构建 HTTP Client
 	hcClient, err := core.NewHcHttpClientBuilder().
 		WithCredential(credentials).
-		WithRegion(reg).
 		WithEndpoint(endpoint).
 		SafeBuild()
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to init client with region %s, endpoint %s: %w", reg, endpoint, err)
+		return nil, fmt.Errorf("failed to init client with endpoint %s: %w", endpoint, err)
 	}
 
 	return vpcep.NewVpcepClient(hcClient), nil
@@ -131,48 +134,40 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	region := data.Region.ValueString()
-
 	// 构建 M1+ 侧 VPCEP 客户端
 	tflog.Info(ctx, "开始初始化 M1+ VPCEP 客户端", map[string]interface{}{
-		"region":     region,
-		"project_id": data.M1ProjectId.ValueString(),
+		"endpoint": data.M1VpccepEndpoint.ValueString(),
 	})
 	m1VpcepClient, err := newVpcepClient(
-		ctx,
 		data.M1Ak.ValueString(),
 		data.M1Sk.ValueString(),
 		data.M1ProjectId.ValueString(),
-		region,
+		data.M1VpccepEndpoint.ValueString(),
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M1+ VPCEP 客户端失败", err.Error())
 		return
 	}
 	tflog.Info(ctx, "M1+ VPCEP 客户端初始化成功", map[string]interface{}{
-		"region":     region,
-		"project_id": data.M1ProjectId.ValueString(),
+		"endpoint": data.M1VpccepEndpoint.ValueString(),
 	})
 
 	// 构建 M3 侧 VPCEP 客户端
 	tflog.Info(ctx, "开始初始化 M3 VPCEP 客户端", map[string]interface{}{
-		"region":     region,
-		"project_id": data.M3ProjectId.ValueString(),
+		"endpoint": data.M3VpccepEndpoint.ValueString(),
 	})
 	m3VpcepClient, err := newVpcepClient(
-		ctx,
 		data.M3Ak.ValueString(),
 		data.M3Sk.ValueString(),
 		data.M3ProjectId.ValueString(),
-		region,
+		data.M3VpccepEndpoint.ValueString(),
 	)
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M3 VPCEP 客户端失败", err.Error())
 		return
 	}
 	tflog.Info(ctx, "M3 VPCEP 客户端初始化成功", map[string]interface{}{
-		"region":     region,
-		"project_id": data.M3ProjectId.ValueString(),
+		"endpoint": data.M3VpccepEndpoint.ValueString(),
 	})
 
 	data.M1VpcepClient = m1VpcepClient
@@ -180,11 +175,13 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	// TODO: M3DnsClient 暂未实现
 
 	tflog.Info(ctx, "KkemProviderData 初始化完成", map[string]interface{}{
-		"region":        region,
-		"dns_applicant": data.DnsApplicant.ValueString(),
-		"m1_project_id": data.M1ProjectId.ValueString(),
-		"m3_project_id": data.M3ProjectId.ValueString(),
-		"resources":     []string{"kkem_net_connect_m1_to_m3", "kkem_net_connect_m3_to_m1"},
+		"dns_applicant":     data.DnsApplicant.ValueString(),
+		"m1_project_id":     data.M1ProjectId.ValueString(),
+		"m3_project_id":     data.M3ProjectId.ValueString(),
+		"m1_vpcep_endpoint": data.M1VpccepEndpoint.ValueString(),
+		"m3_vpcep_endpoint": data.M3VpccepEndpoint.ValueString(),
+		"m3_dns_endpoint":   data.M3DnsEndpoint.ValueString(),
+		"resources":         []string{"kkem_net_connect_m1_to_m3", "kkem_net_connect_m3_to_m1"},
 	})
 
 	resp.ResourceData = &data

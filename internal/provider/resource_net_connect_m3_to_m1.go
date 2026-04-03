@@ -96,7 +96,7 @@ func (r *NetConnectM3ToM1Resource) Configure(ctx context.Context, req resource.C
 // Step 3 - 调用华为云标准 DNS 服务创建 A 记录，将业务域名指向 VPCEP-Client IP（TODO）
 func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	tflog.Info(ctx, "[M3→M1] Create 方法入口", map[string]interface{}{
-		"method":    "Create",
+		"method":   "Create",
 		"resource": "kkem_net_connect_m3_to_m1",
 	})
 
@@ -111,17 +111,17 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	tflog.Debug(ctx, "[M3→M1] 创建请求参数", map[string]interface{}{
-		"m3_vpc_id":             plan.M3VpcId.ValueString(),
-		"m3_subnet_id":          plan.M3SubnetId.ValueString(),
+		"m3_vpc_id":               plan.M3VpcId.ValueString(),
+		"m3_subnet_id":            plan.M3SubnetId.ValueString(),
 		"m1_sni_proxy_service_id": plan.M1SniProxyServiceId.ValueString(),
-		"service_domain":       plan.ServiceDomain.ValueString(),
+		"service_domain":          plan.ServiceDomain.ValueString(),
 	})
 
 	// ========== Step 1 - 在 M3 侧创建 VPCEP-Client，对接 M1 侧 SNI Proxy EP-Server（TODO）==========
 	tflog.Info(ctx, "[M3→M1] Step 1: 在 M3 侧创建 VPCEP-Client", map[string]interface{}{
-		"step":                   1,
-		"m3_vpc_id":              plan.M3VpcId.ValueString(),
-		"m3_subnet_id":           plan.M3SubnetId.ValueString(),
+		"step":                    1,
+		"m3_vpc_id":               plan.M3VpcId.ValueString(),
+		"m3_subnet_id":            plan.M3SubnetId.ValueString(),
 		"m1_sni_proxy_service_id": plan.M1SniProxyServiceId.ValueString(),
 	})
 	// TODO: 实现 M3 侧 VPCEP-Client 创建逻辑
@@ -159,8 +159,8 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 
 	tflog.Info(ctx, "[M3→M1] Create 方法出口", map[string]interface{}{
-		"method":         "Create",
-		"resource":       "kkem_net_connect_m3_to_m1",
+		"method":          "Create",
+		"resource":        "kkem_net_connect_m3_to_m1",
 		"vpcep_client_id": plan.VpcepClientId.ValueString(),
 	})
 }
@@ -168,7 +168,7 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 // Read 读取当前 M3→M1 网络打通状态。
 func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "[M3→M1] Read 方法入口", map[string]interface{}{
-		"method":    "Read",
+		"method":   "Read",
 		"resource": "kkem_net_connect_m3_to_m1",
 	})
 
@@ -205,7 +205,7 @@ func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 	// ========== Step 2 - 查询 DNS A 记录状态（TODO）==========
 	if dnsRecordId != "" && dnsRecordId != "TODO_DNS_RECORD_ID" {
 		tflog.Info(ctx, "[M3→M1] Step 2: 查询 DNS A 记录状态", map[string]interface{}{
-			"step":         2,
+			"step":          2,
 			"dns_record_id": dnsRecordId,
 		})
 		// TODO: 实现 DNS A 记录状态查询
@@ -219,8 +219,8 @@ func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
 	tflog.Info(ctx, "[M3→M1] Read 方法出口", map[string]interface{}{
-		"method":         "Read",
-		"resource":       "kkem_net_connect_m3_to_m1",
+		"method":          "Read",
+		"resource":        "kkem_net_connect_m3_to_m1",
 		"vpcep_client_id": state.VpcepClientId.ValueString(),
 	})
 }
@@ -228,7 +228,7 @@ func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 // Update 更新 M3→M1 网络打通（当前不支持）。
 func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "[M3→M1] Update 方法入口", map[string]interface{}{
-		"method":    "Update",
+		"method":   "Update",
 		"resource": "kkem_net_connect_m3_to_m1",
 	})
 
@@ -239,7 +239,7 @@ func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 
 	tflog.Info(ctx, "[M3→M1] Update 方法出口", map[string]interface{}{
 		"method":    "Update",
-		"resource": "kkem_net_connect_m3_to_m1",
+		"resource":  "kkem_net_connect_m3_to_m1",
 		"supported": false,
 	})
 }
@@ -249,7 +249,7 @@ func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 // Step 2 - 删除 M3 侧 VPCEP-Client（TODO）
 func (r *NetConnectM3ToM1Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	tflog.Info(ctx, "[M3→M1] Delete 方法入口", map[string]interface{}{
-		"method":    "Delete",
+		"method":   "Delete",
 		"resource": "kkem_net_connect_m3_to_m1",
 	})
 
@@ -269,7 +269,7 @@ func (r *NetConnectM3ToM1Resource) Delete(ctx context.Context, req resource.Dele
 	dnsRecordId := state.DnsARecordId.ValueString()
 	if dnsRecordId != "" && dnsRecordId != "TODO_DNS_RECORD_ID" {
 		tflog.Info(ctx, "[M3→M1] Step 1: 删除 DNS A 记录", map[string]interface{}{
-			"step":         1,
+			"step":          1,
 			"dns_record_id": dnsRecordId,
 		})
 		// TODO: 实现 DNS A 记录删除
@@ -296,7 +296,7 @@ func (r *NetConnectM3ToM1Resource) Delete(ctx context.Context, req resource.Dele
 	}
 
 	tflog.Info(ctx, "[M3→M1] Delete 方法出口", map[string]interface{}{
-		"method":    "Delete",
+		"method":   "Delete",
 		"resource": "kkem_net_connect_m3_to_m1",
 	})
 }
