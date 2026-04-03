@@ -122,6 +122,21 @@ func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, err
 	return vpcep.NewVpcepClient(hcClient), nil
 }
 
+// buildVpcepClient 构建 VPCEP 客户端，日志和错误处理封装在一起。
+func (p *KkemProvider) buildVpcepClient(ctx context.Context, label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
+	tflog.Info(ctx, fmt.Sprintf("开始初始化 %s VPCEP 客户端", label), map[string]interface{}{
+		"endpoint": endpoint,
+	})
+	client, err := newVpcepClient(ak, sk, projectId, endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("创建 %s VPCEP 客户端失败: %w", label, err)
+	}
+	tflog.Info(ctx, fmt.Sprintf("%s VPCEP 客户端初始化成功", label), map[string]interface{}{
+		"endpoint": endpoint,
+	})
+	return client, nil
+}
+
 // Configure 读取配置字段并初始化 M1+/M3 两套客户端。
 func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
 	var data KkemProviderModel
@@ -131,41 +146,21 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	// 构建 M1+ 侧 VPCEP 客户端
-	tflog.Info(ctx, "开始初始化 M1+ VPCEP 客户端", map[string]interface{}{
-		"endpoint": data.VpcepEndpoint.ValueString(),
-	})
-	m1PlusVpcepClient, err := newVpcepClient(
-		data.M1PlusAk.ValueString(),
-		data.M1PlusSk.ValueString(),
-		data.M1PlusProjectId.ValueString(),
-		data.VpcepEndpoint.ValueString(),
-	)
+	m1PlusVpcepClient, err := p.buildVpcepClient(ctx, "M1+",
+		data.M1PlusAk.ValueString(), data.M1PlusSk.ValueString(),
+		data.M1PlusProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M1+ VPCEP 客户端失败", err.Error())
 		return
 	}
-	tflog.Info(ctx, "M1+ VPCEP 客户端初始化成功", map[string]interface{}{
-		"endpoint": data.VpcepEndpoint.ValueString(),
-	})
 
-	// 构建 M3 侧 VPCEP 客户端
-	tflog.Info(ctx, "开始初始化 M3 VPCEP 客户端", map[string]interface{}{
-		"endpoint": data.VpcepEndpoint.ValueString(),
-	})
-	m3VpcepClient, err := newVpcepClient(
-		data.M3Ak.ValueString(),
-		data.M3Sk.ValueString(),
-		data.M3ProjectId.ValueString(),
-		data.VpcepEndpoint.ValueString(),
-	)
+	m3VpcepClient, err := p.buildVpcepClient(ctx, "M3",
+		data.M3Ak.ValueString(), data.M3Sk.ValueString(),
+		data.M3ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("创建 M3 VPCEP 客户端失败", err.Error())
 		return
 	}
-	tflog.Info(ctx, "M3 VPCEP 客户端初始化成功", map[string]interface{}{
-		"endpoint": data.VpcepEndpoint.ValueString(),
-	})
 
 	clients := &Clients{
 		M1PlusVpcepClient: m1PlusVpcepClient,
