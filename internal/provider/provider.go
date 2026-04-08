@@ -60,9 +60,17 @@ func (p *KkemProvider) Metadata(ctx context.Context, req provider.MetadataReques
 func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
-			"m1_plus": schema.SingleNestedAttribute{
+			"vpcep_endpoint": schema.StringAttribute{
 				Required:    true,
-				Description: "M1+ 区域凭证",
+				Description: "VPCEP 服务 Endpoint，如 https://vpcep.cn-north-7.myhuaweicloud.com",
+			},
+			"dns_endpoint": schema.StringAttribute{
+				Required:    true,
+				Description: "DNS 服务 Endpoint，如 https://dns.cn-north-7.myhuaweicloud.com",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"m1_plus": schema.SingleNestedBlock{
 				Attributes: map[string]schema.Attribute{
 					"ak": schema.StringAttribute{
 						Required:    true,
@@ -80,9 +88,7 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 					},
 				},
 			},
-			"m3": schema.SingleNestedAttribute{
-				Required:    true,
-				Description: "M3 区域凭证",
+			"m3": schema.SingleNestedBlock{
 				Attributes: map[string]schema.Attribute{
 					"ak": schema.StringAttribute{
 						Required:    true,
@@ -99,14 +105,6 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 						Description: "M3 Project ID",
 					},
 				},
-			},
-			"vpcep_endpoint": schema.StringAttribute{
-				Required:    true,
-				Description: "VPCEP 服务 Endpoint，如 https://vpcep.cn-north-7.myhuaweicloud.com",
-			},
-			"dns_endpoint": schema.StringAttribute{
-				Required:    true,
-				Description: "DNS 服务 Endpoint，如 https://dns.cn-north-7.myhuaweicloud.com",
 			},
 		},
 	}
