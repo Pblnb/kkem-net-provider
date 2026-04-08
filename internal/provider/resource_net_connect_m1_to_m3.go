@@ -17,17 +17,17 @@ type NetConnectM1ToM3Resource struct{}
 
 // NetConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
 type NetConnectM1ToM3Model struct {
-	M3VpcId            types.String     `tfsdk:"m3_vpc_id"`
-	M3BackendType      types.String     `tfsdk:"m3_backend_type"`
-	M3BackendId        types.String     `tfsdk:"m3_backend_id"`
-	M3VpcepServerPorts []VpcepPortBlock `tfsdk:"m3_vpcep_server_ports"`
-	M1PlusVpcId        types.String     `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId     types.String     `tfsdk:"m1_plus_subnet_id"`
-	DnsDomain          types.String     `tfsdk:"dns_domain"`
-	DnsDomainSuffix    types.String     `tfsdk:"dns_domain_suffix"`
-	VpcepServerId      types.String     `tfsdk:"vpcep_server_id"`
-	VpcepClientId      types.String     `tfsdk:"vpcep_client_id"`
-	VpcepClientIp      types.String     `tfsdk:"vpcep_client_ip"`
+	M3VpcId             types.String     `tfsdk:"m3_vpc_id"`
+	M3BackendType       types.String     `tfsdk:"m3_backend_type"`
+	M3BackendId         types.String     `tfsdk:"m3_backend_id"`
+	M3VpcepServicePorts []VpcepPortBlock `tfsdk:"m3_vpcep_service_ports"`
+	M1PlusVpcId         types.String     `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId      types.String     `tfsdk:"m1_plus_subnet_id"`
+	DnsDomain           types.String     `tfsdk:"dns_domain"`
+	DnsDomainSuffix     types.String     `tfsdk:"dns_domain_suffix"`
+	VpcepServiceId      types.String     `tfsdk:"vpcep_service_id"`
+	VpcepClientId       types.String     `tfsdk:"vpcep_client_id"`
+	VpcepClientIp       types.String     `tfsdk:"vpcep_client_ip"`
 }
 
 type VpcepPortBlock struct {
@@ -52,7 +52,7 @@ func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_vpc_id":       schema.StringAttribute{Required: true},
 			"m3_backend_type": schema.StringAttribute{Required: true},
 			"m3_backend_id":   schema.StringAttribute{Required: true},
-			"m3_vpcep_server_ports": schema.ListNestedAttribute{Required: true,
+			"m3_vpcep_service_ports": schema.ListNestedAttribute{Required: true,
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"client_port": schema.StringAttribute{Required: true},
 					"server_port": schema.StringAttribute{Required: true},
@@ -62,7 +62,7 @@ func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m1_plus_subnet_id": schema.StringAttribute{Required: true},
 			"dns_domain":        schema.StringAttribute{Required: true},
 			"dns_domain_suffix": schema.StringAttribute{Required: true},
-			"vpcep_server_id":   schema.StringAttribute{Computed: true},
+			"vpcep_service_id":  schema.StringAttribute{Computed: true},
 			"vpcep_client_id":   schema.StringAttribute{Computed: true},
 			"vpcep_client_ip":   schema.StringAttribute{Computed: true},
 		},
@@ -78,7 +78,7 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create called")
 	var plan NetConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	plan.VpcepServerId = types.StringValue("demo_server_id")
+	plan.VpcepServiceId = types.StringValue("demo_service_id")
 	plan.VpcepClientId = types.StringValue("demo_client_id")
 	plan.VpcepClientIp = types.StringValue("10.0.0.100")
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

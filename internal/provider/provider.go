@@ -19,8 +19,8 @@ import (
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
-// KkemProviderModel Provider 数据结构，在 Configure 方法中被初始化。
-type KkemProviderModel struct {
+// kkemNetProviderModel Provider 数据结构，在 Configure 方法中被初始化。
+type kkemNetProviderModel struct {
 	M1PlusAk        types.String `tfsdk:"m1_plus_ak"`
 	M1PlusSk        types.String `tfsdk:"m1_plus_sk"`
 	M1PlusProjectId types.String `tfsdk:"m1_plus_project_id"`
@@ -33,7 +33,7 @@ type KkemProviderModel struct {
 	DnsEndpoint   types.String `tfsdk:"dns_endpoint"`
 }
 
-type Clients struct {
+type clients struct {
 	M1PlusVpcepClient *vpcep.VpcepClient
 	M3VpcepClient     *vpcep.VpcepClient
 	M3DnsClient       interface{} // TODO
@@ -136,7 +136,7 @@ func (p *KkemProvider) buildVpcepClient(ctx context.Context,
 
 // Configure 读取配置字段并初始化 M1+/M3 两套客户端。
 func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
-	var data KkemProviderModel
+	var data kkemNetProviderModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
@@ -159,7 +159,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	clients := &Clients{
+	clients := &clients{
 		M1PlusVpcepClient: m1PlusVpcepClient,
 		M3VpcepClient:     m3VpcepClient,
 	}
