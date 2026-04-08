@@ -15,7 +15,7 @@ import (
 
 type NetConnectM3ToM1Resource struct{}
 
-type NetConnectM3ToM1Model struct {
+type netConnectM3ToM1Model struct {
 	M3VpcId                 types.String `tfsdk:"m3_vpc_id"`
 	M3SubnetId              types.String `tfsdk:"m3_subnet_id"`
 	M1PlusSniProxyServiceId types.String `tfsdk:"m1_plus_sni_proxy_service_id"`
@@ -56,7 +56,7 @@ func (r *NetConnectM3ToM1Resource) Configure(ctx context.Context, req resource.C
 func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Create called")
-	var plan NetConnectM3ToM1Model
+	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	plan.VpcepClientId = types.StringValue("demo_client_id")
 	plan.VpcepClientIp = types.StringValue("10.0.0.100")
@@ -66,7 +66,7 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 
 func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Read called")
-	var state NetConnectM3ToM1Model
+	var state netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -74,7 +74,7 @@ func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Update called")
-	var plan NetConnectM3ToM1Model
+	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }

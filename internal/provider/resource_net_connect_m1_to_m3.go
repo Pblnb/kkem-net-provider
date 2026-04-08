@@ -15,12 +15,12 @@ import (
 
 type NetConnectM1ToM3Resource struct{}
 
-// NetConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
-type NetConnectM1ToM3Model struct {
+// netConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
+type netConnectM1ToM3Model struct {
 	M3VpcId             types.String     `tfsdk:"m3_vpc_id"`
 	M3BackendType       types.String     `tfsdk:"m3_backend_type"`
 	M3BackendId         types.String     `tfsdk:"m3_backend_id"`
-	M3VpcepServicePorts []VpcepPortBlock `tfsdk:"m3_vpcep_service_ports"`
+	M3VpcepServicePorts []vpcepPortBlock `tfsdk:"m3_vpcep_service_ports"`
 	M1PlusVpcId         types.String     `tfsdk:"m1_plus_vpc_id"`
 	M1PlusSubnetId      types.String     `tfsdk:"m1_plus_subnet_id"`
 	DnsDomain           types.String     `tfsdk:"dns_domain"`
@@ -30,7 +30,7 @@ type NetConnectM1ToM3Model struct {
 	VpcepClientIp       types.String     `tfsdk:"vpcep_client_ip"`
 }
 
-type VpcepPortBlock struct {
+type vpcepPortBlock struct {
 	ClientPort types.String `tfsdk:"client_port"`
 	ServerPort types.String `tfsdk:"server_port"`
 	Protocol   types.String `tfsdk:"protocol"`
@@ -76,7 +76,7 @@ func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create called")
-	var plan NetConnectM1ToM3Model
+	var plan netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	plan.VpcepServiceId = types.StringValue("demo_service_id")
 	plan.VpcepClientId = types.StringValue("demo_client_id")
@@ -86,7 +86,7 @@ func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Read called")
-	var state NetConnectM1ToM3Model
+	var state netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -94,7 +94,7 @@ func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Update called")
-	var plan NetConnectM1ToM3Model
+	var plan netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
