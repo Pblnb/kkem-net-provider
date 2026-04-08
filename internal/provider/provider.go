@@ -35,9 +35,9 @@ type kkemNetProviderModel struct {
 }
 
 type clients struct {
-	M1PlusVpcepClient *vpcep.VpcepClient
-	M3VpcepClient     *vpcep.VpcepClient
-	M3DnsClient       interface{} // TODO
+	m1PlusVpcepClient *vpcep.VpcepClient
+	m3VpcepClient     *vpcep.VpcepClient
+	m3DnsClient       interface{} // TODO
 }
 
 type KkemProvider struct {
@@ -173,8 +173,8 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	clients := &clients{
-		M1PlusVpcepClient: m1PlusVpcepClient,
-		M3VpcepClient:     m3VpcepClient,
+		m1PlusVpcepClient: m1PlusVpcepClient,
+		m3VpcepClient:     m3VpcepClient,
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]interface{}{
