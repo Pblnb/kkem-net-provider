@@ -18,8 +18,8 @@ type NetConnectM1ToM3Resource struct{}
 // netConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
 type netConnectM1ToM3Model struct {
 	M3VpcId             types.String     `tfsdk:"m3_vpc_id"`
-	M3BackendType       types.String     `tfsdk:"m3_backend_type"`
-	M3BackendId         types.String     `tfsdk:"m3_backend_id"`
+	M3ServerType        types.String     `tfsdk:"m3_server_type"`
+	M3PortId            types.String     `tfsdk:"m3_port_id"`
 	M3VpcepServicePorts []vpcepPortBlock `tfsdk:"m3_vpcep_service_ports"`
 	M1PlusVpcId         types.String     `tfsdk:"m1_plus_vpc_id"`
 	M1PlusSubnetId      types.String     `tfsdk:"m1_plus_subnet_id"`
@@ -49,9 +49,9 @@ func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 	resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
-			"m3_vpc_id":       schema.StringAttribute{Required: true},
-			"m3_backend_type": schema.StringAttribute{Required: true},
-			"m3_backend_id":   schema.StringAttribute{Required: true},
+			"m3_vpc_id":      schema.StringAttribute{Required: true},
+			"m3_server_type": schema.StringAttribute{Required: true},
+			"m3_port_id":     schema.StringAttribute{Required: true},
 			"m3_vpcep_service_ports": schema.ListNestedAttribute{Required: true,
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"client_port": schema.StringAttribute{Required: true},
