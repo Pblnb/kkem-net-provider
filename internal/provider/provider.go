@@ -19,15 +19,16 @@ import (
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 )
 
+type cloudCredentials struct {
+	Ak        types.String `tfsdk:"ak"`
+	Sk        types.String `tfsdk:"sk"`
+	ProjectId types.String `tfsdk:"project_id"`
+}
+
 // kkemNetProviderModel Provider 数据结构，在 Configure 方法中被初始化。
 type kkemNetProviderModel struct {
-	M1PlusAk        types.String `tfsdk:"m1_plus_ak"`
-	M1PlusSk        types.String `tfsdk:"m1_plus_sk"`
-	M1PlusProjectId types.String `tfsdk:"m1_plus_project_id"`
-
-	M3Ak        types.String `tfsdk:"m3_ak"`
-	M3Sk        types.String `tfsdk:"m3_sk"`
-	M3ProjectId types.String `tfsdk:"m3_project_id"`
+	M1Plus cloudCredentials `tfsdk:"m1_plus"`
+	M3     cloudCredentials `tfsdk:"m3"`
 
 	VpcepEndpoint types.String `tfsdk:"vpcep_endpoint"`
 	DnsEndpoint   types.String `tfsdk:"dns_endpoint"`
@@ -59,33 +60,45 @@ func (p *KkemProvider) Metadata(ctx context.Context, req provider.MetadataReques
 func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
-			"m1_plus_ak": schema.StringAttribute{
+			"m1_plus": schema.SingleNestedAttribute{
 				Required:    true,
-				Sensitive:   true,
-				Description: "M1+ Access Key",
+				Description: "M1+ 区域凭证",
+				Attributes: map[string]schema.Attribute{
+					"ak": schema.StringAttribute{
+						Required:    true,
+						Sensitive:   true,
+						Description: "M1+ Access Key",
+					},
+					"sk": schema.StringAttribute{
+						Required:    true,
+						Sensitive:   true,
+						Description: "M1+ Secret Key",
+					},
+					"project_id": schema.StringAttribute{
+						Required:    true,
+						Description: "M1+ Project ID",
+					},
+				},
 			},
-			"m1_plus_sk": schema.StringAttribute{
+			"m3": schema.SingleNestedAttribute{
 				Required:    true,
-				Sensitive:   true,
-				Description: "M1+ Secret Key",
-			},
-			"m1_plus_project_id": schema.StringAttribute{
-				Required:    true,
-				Description: "M1+ Project ID",
-			},
-			"m3_ak": schema.StringAttribute{
-				Required:    true,
-				Sensitive:   true,
-				Description: "M3 Access Key",
-			},
-			"m3_sk": schema.StringAttribute{
-				Required:    true,
-				Sensitive:   true,
-				Description: "M3 Secret Key",
-			},
-			"m3_project_id": schema.StringAttribute{
-				Required:    true,
-				Description: "M3 Project ID",
+				Description: "M3 区域凭证",
+				Attributes: map[string]schema.Attribute{
+					"ak": schema.StringAttribute{
+						Required:    true,
+						Sensitive:   true,
+						Description: "M3 Access Key",
+					},
+					"sk": schema.StringAttribute{
+						Required:    true,
+						Sensitive:   true,
+						Description: "M3 Secret Key",
+					},
+					"project_id": schema.StringAttribute{
+						Required:    true,
+						Description: "M3 Project ID",
+					},
+				},
 			},
 			"vpcep_endpoint": schema.StringAttribute{
 				Required:    true,
@@ -144,16 +157,16 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	m1PlusVpcepClient, err := p.buildVpcepClient(ctx, "M1+",
-		data.M1PlusAk.ValueString(), data.M1PlusSk.ValueString(),
-		data.M1PlusProjectId.ValueString(), data.VpcepEndpoint.ValueString())
+		data.M1Plus.Ak.ValueString(), data.M1Plus.Sk.ValueString(),
+		data.M1Plus.ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("create M1+ VPCEP client failed", err.Error())
 		return
 	}
 
 	m3VpcepClient, err := p.buildVpcepClient(ctx, "M3",
-		data.M3Ak.ValueString(), data.M3Sk.ValueString(),
-		data.M3ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
+		data.M3.Ak.ValueString(), data.M3.Sk.ValueString(),
+		data.M3.ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("create M3 VPCEP client failed", err.Error())
 		return
@@ -165,8 +178,8 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]interface{}{
-		"m1_plus_project_id": data.M1PlusProjectId.ValueString(),
-		"m3_project_id":      data.M3ProjectId.ValueString(),
+		"m1_plus_project_id": data.M1Plus.ProjectId.ValueString(),
+		"m3_project_id":      data.M3.ProjectId.ValueString(),
 		"vpcep_endpoint":     data.VpcepEndpoint.ValueString(),
 		"dns_endpoint":       data.DnsEndpoint.ValueString(),
 	})
