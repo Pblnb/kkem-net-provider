@@ -6,46 +6,49 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 )
 
-type NetConnectM1ToM3Resource struct{}
-
-// netConnectM1ToM3Model M1→M3 网络打通 Resource 的数据模型。
-type netConnectM1ToM3Model struct {
-	M3VpcId             types.String     `tfsdk:"m3_vpc_id"`
-	M3ServerType        types.String     `tfsdk:"m3_server_type"`
-	M3PortId            types.String     `tfsdk:"m3_port_id"`
-	M3VpcepServicePorts []vpcepPortBlock `tfsdk:"m3_vpcep_service_ports"`
-	M1PlusVpcId         types.String     `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId      types.String     `tfsdk:"m1_plus_subnet_id"`
-	DnsDomain           types.String     `tfsdk:"dns_domain"`
-	DnsDomainSuffix     types.String     `tfsdk:"dns_domain_suffix"`
-	VpcepServiceId      types.String     `tfsdk:"vpcep_service_id"`
-	VpcepClientId       types.String     `tfsdk:"vpcep_client_id"`
-	VpcepClientIp       types.String     `tfsdk:"vpcep_client_ip"`
+type netConnectM1ToM3Resource struct {
+	m3VpcepClient *vpcep.VpcepClient
 }
 
-type vpcepPortBlock struct {
-	ClientPort types.String `tfsdk:"client_port"`
-	ServerPort types.String `tfsdk:"server_port"`
-	Protocol   types.String `tfsdk:"protocol"`
+type netConnectM1ToM3Model struct {
+	M3VpcId             string                  `tfsdk:"m3_vpc_id"`
+	M3ServerType        string                  `tfsdk:"m3_server_type"`
+	M3PortId            string                  `tfsdk:"m3_port_id"`
+	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
+	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
+	DnsDomain           string                  `tfsdk:"dns_domain"`
+	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
+	VpcepServiceId      *string                 `tfsdk:"vpcep_service_id"`
+	VpcepClientId       *string                 `tfsdk:"vpcep_client_id"`
+	VpcepClientIp       *string                 `tfsdk:"vpcep_client_ip"`
+}
+
+type vpcepServicePortBlock struct {
+	ClientPort int32  `tfsdk:"client_port"`
+	ServerPort int32  `tfsdk:"server_port"`
+	Protocol   string `tfsdk:"protocol"`
 }
 
 func NewNetConnectM1ToM3Resource() resource.Resource {
-	return &NetConnectM1ToM3Resource{}
+	return &netConnectM1ToM3Resource{}
 }
 
-func (r *NetConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
+func (r *netConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_net_connect_m1_to_m3"
 }
 
-func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.SchemaRequest,
+func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.SchemaRequest,
 	resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
@@ -54,8 +57,8 @@ func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_port_id":     schema.StringAttribute{Required: true},
 			"m3_vpcep_service_ports": schema.ListNestedAttribute{Required: true,
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-					"client_port": schema.StringAttribute{Required: true},
-					"server_port": schema.StringAttribute{Required: true},
+					"client_port": schema.Int64Attribute{Required: true},
+					"server_port": schema.Int64Attribute{Required: true},
 					"protocol":    schema.StringAttribute{Required: true},
 				}}},
 			"m1_plus_vpc_id":    schema.StringAttribute{Required: true},
@@ -69,29 +72,136 @@ func (r *NetConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 	}
 }
 
-func (r *NetConnectM1ToM3Resource) Configure(ctx context.Context, req resource.ConfigureRequest,
+func (r *netConnectM1ToM3Resource) Configure(ctx context.Context, req resource.ConfigureRequest,
 	resp *resource.ConfigureResponse) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	clients, ok := req.ProviderData.(*clients)
+	if !ok {
+		resp.Diagnostics.AddError("configure error", "invalid provider data type")
+		return
+	}
+	r.m3VpcepClient = clients.m3VpcepClient
 }
 
-func (r *NetConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
+func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create called")
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started")
 	var plan netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	plan.VpcepServiceId = types.StringValue("demo_service_id")
-	plan.VpcepClientId = types.StringValue("demo_client_id")
-	plan.VpcepClientIp = types.StringValue("10.0.0.100")
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Step 1 - 在 M3 侧创建 VPCEP-Service
+	vpcepServiceId, err := r.createVpcepService(ctx, &plan)
+	if err != nil {
+		resp.Diagnostics.AddError("create VPCEP service failed", err.Error())
+		return
+	}
+	plan.VpcepServiceId = &vpcepServiceId
+
+	// Step 2 - 配置 VPCEP-Service 白名单（当前跳过，approval_enabled=false）
+	// Step 3 - 在 M1+ 侧创建 VPCEP-Client（TODO）
+	// Step 4 - 轮询等待 Client 状态就绪（TODO）
+	// Step 5 - 调用内网 DNS API 创建解析记录（TODO）
+
+	emptyStr := ""
+	plan.VpcepClientId = &emptyStr
+	plan.VpcepClientIp = &emptyStr
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func (r *NetConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Read called")
+func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan *netConnectM1ToM3Model) (string,
+	error) {
+	// cmt: [建议] 这一段可以提取成一个 getVpcepServerType 的超简易工厂函数，提高可读性和后续维护成本么？
+	serverType := model.GetCreateEndpointServiceRequestBodyServerTypeEnum().LB
+	switch plan.M3ServerType {
+	case "VM":
+		serverType = model.GetCreateEndpointServiceRequestBodyServerTypeEnum().VM
+	case "LB":
+		serverType = model.GetCreateEndpointServiceRequestBodyServerTypeEnum().LB
+	}
+
+	ports := make([]model.PortList, len(plan.M3VpcepServicePorts))
+
+	// cmt: [建议] 这里的 port 是不是可以也可以用类似 ServerType 的方式处理，只不过当前总是会返回 TCP 而已，便于后续扩展
+	tcpProtocol := model.GetPortListProtocolEnum().TCP
+	for i := range plan.M3VpcepServicePorts {
+		ports[i] = model.PortList{
+			ClientPort: &plan.M3VpcepServicePorts[i].ClientPort,
+			ServerPort: &plan.M3VpcepServicePorts[i].ServerPort,
+			Protocol:   &tcpProtocol,
+		}
+	}
+
+	approvalEnabled := false
+	createReq := &model.CreateEndpointServiceRequest{
+		Body: &model.CreateEndpointServiceRequestBody{
+			VpcId:           plan.M3VpcId,
+			PortId:          plan.M3PortId,
+			ServerType:      serverType,
+			ApprovalEnabled: &approvalEnabled,
+			Ports:           ports,
+		},
+	}
+
+	tflog.Debug(ctx, "Creating VPCEP-Service", map[string]interface{}{
+		"vpc_id":      plan.M3VpcId,
+		"port_id":     plan.M3PortId,
+		"server_type": plan.M3ServerType,
+		"ports_count": len(ports),
+	})
+
+	createResp, err := r.m3VpcepClient.CreateEndpointService(createReq)
+	if err != nil {
+		return "", fmt.Errorf("CreateEndpointService API failed: %w", err)
+	}
+
+	if createResp.Id == nil {
+		return "", fmt.Errorf("CreateEndpointService response has no ID")
+	}
+
+	tflog.Info(ctx, "VPCEP-Service created", map[string]interface{}{
+		"service_id": *createResp.Id,
+		"status":     *createResp.Status,
+	})
+
+	return *createResp.Id, nil
+}
+
+func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Read started")
 	var state netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if state.VpcepServiceId == nil {
+		return
+	}
+
+	// 查询 VPCEP-Service 状态
+	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: *state.VpcepServiceId}
+
+	getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
+	if err != nil {
+		resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
+		return
+	}
+
+	tflog.Debug(ctx, "VPCEP-Service status", map[string]interface{}{
+		"service_id": *state.VpcepServiceId,
+		"status":     *getResp.Status,
+	})
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,
+func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Update called")
 	var plan netConnectM1ToM3Model
@@ -99,7 +209,40 @@ func (r *NetConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func (r *NetConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest,
+func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.DeleteRequest,
 	resp *resource.DeleteResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Delete called")
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Delete started")
+	var state netConnectM1ToM3Model
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if state.VpcepServiceId == nil {
+		return
+	}
+
+	// 删除顺序：DNS → VPCEP-Client → VPCEP-Service
+	// Step 1 - 删除内网 DNS 解析记录（TODO）
+
+	// Step 2 - 删除 M1+ 侧 VPCEP-Client（TODO）
+
+	// Step 3 - 删除 M3 侧 VPCEP-Service
+	deleteReq := &model.DeleteEndpointServiceRequest{
+		VpcEndpointServiceId: *state.VpcepServiceId,
+	}
+
+	tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]interface{}{
+		"service_id": *state.VpcepServiceId,
+	})
+
+	_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
+	if err != nil {
+		resp.Diagnostics.AddError("delete VPCEP service failed", err.Error())
+		return
+	}
+
+	tflog.Info(ctx, "VPCEP-Service deleted", map[string]interface{}{
+		"service_id": *state.VpcepServiceId,
+	})
 }

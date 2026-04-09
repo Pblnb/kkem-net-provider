@@ -9,20 +9,19 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type NetConnectM3ToM1Resource struct{}
 
 type netConnectM3ToM1Model struct {
-	M3VpcId                 types.String `tfsdk:"m3_vpc_id"`
-	M3SubnetId              types.String `tfsdk:"m3_subnet_id"`
-	M1PlusSniProxyServiceId types.String `tfsdk:"m1_plus_sni_proxy_service_id"`
-	ServiceDomain           types.String `tfsdk:"service_domain"`
-	VpcepClientId           types.String `tfsdk:"vpcep_client_id"`
-	VpcepClientIp           types.String `tfsdk:"vpcep_client_ip"`
-	DnsARecordId            types.String `tfsdk:"dns_a_record_id"`
+	M3VpcId                 string `tfsdk:"m3_vpc_id"`
+	M3SubnetId              string `tfsdk:"m3_subnet_id"`
+	M1PlusSniProxyServiceId string `tfsdk:"m1_plus_sni_proxy_service_id"`
+	ServiceDomain           string `tfsdk:"service_domain"`
+	VpcepClientId           string `tfsdk:"vpcep_client_id"`
+	VpcepClientIp           string `tfsdk:"vpcep_client_ip"`
+	DnsARecordId            string `tfsdk:"dns_a_record_id"`
 }
 
 func NewNetConnectM3ToM1Resource() resource.Resource {
@@ -58,9 +57,9 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Create called")
 	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	plan.VpcepClientId = types.StringValue("demo_client_id")
-	plan.VpcepClientIp = types.StringValue("10.0.0.100")
-	plan.DnsARecordId = types.StringValue("demo_dns_record_id")
+	plan.VpcepClientId = "demo_client_id"
+	plan.VpcepClientIp = "10.0.0.100"
+	plan.DnsARecordId = "demo_dns_record_id"
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

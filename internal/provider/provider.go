@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -20,9 +19,9 @@ import (
 )
 
 type cloudCredentials struct {
-	Ak        types.String `tfsdk:"ak"`
-	Sk        types.String `tfsdk:"sk"`
-	ProjectId types.String `tfsdk:"project_id"`
+	Ak        string `tfsdk:"ak"`
+	Sk        string `tfsdk:"sk"`
+	ProjectId string `tfsdk:"project_id"`
 }
 
 // kkemNetProviderModel Provider 数据结构，在 Configure 方法中被初始化。
@@ -30,8 +29,8 @@ type kkemNetProviderModel struct {
 	M1Plus cloudCredentials `tfsdk:"m1_plus"`
 	M3     cloudCredentials `tfsdk:"m3"`
 
-	VpcepEndpoint types.String `tfsdk:"vpcep_endpoint"`
-	DnsEndpoint   types.String `tfsdk:"dns_endpoint"`
+	VpcepEndpoint string `tfsdk:"vpcep_endpoint"`
+	DnsEndpoint   string `tfsdk:"dns_endpoint"`
 }
 
 type clients struct {
@@ -154,17 +153,14 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	m1PlusVpcepClient, err := p.buildVpcepClient(ctx, "M1+",
-		data.M1Plus.Ak.ValueString(), data.M1Plus.Sk.ValueString(),
-		data.M1Plus.ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
+	m1PlusVpcepClient, err := p.buildVpcepClient(ctx, "M1+", data.M1Plus.Ak, data.M1Plus.Sk, data.M1Plus.ProjectId,
+		data.VpcepEndpoint)
 	if err != nil {
 		resp.Diagnostics.AddError("create M1+ VPCEP client failed", err.Error())
 		return
 	}
 
-	m3VpcepClient, err := p.buildVpcepClient(ctx, "M3",
-		data.M3.Ak.ValueString(), data.M3.Sk.ValueString(),
-		data.M3.ProjectId.ValueString(), data.VpcepEndpoint.ValueString())
+	m3VpcepClient, err := p.buildVpcepClient(ctx, "M3", data.M3.Ak, data.M3.Sk, data.M3.ProjectId, data.VpcepEndpoint)
 	if err != nil {
 		resp.Diagnostics.AddError("create M3 VPCEP client failed", err.Error())
 		return
@@ -176,10 +172,10 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]interface{}{
-		"m1_plus_project_id": data.M1Plus.ProjectId.ValueString(),
-		"m3_project_id":      data.M3.ProjectId.ValueString(),
-		"vpcep_endpoint":     data.VpcepEndpoint.ValueString(),
-		"dns_endpoint":       data.DnsEndpoint.ValueString(),
+		"m1_plus_project_id": data.M1Plus.ProjectId,
+		"m3_project_id":      data.M3.ProjectId,
+		"vpcep_endpoint":     data.VpcepEndpoint,
+		"dns_endpoint":       data.DnsEndpoint,
 	})
 
 	resp.ResourceData = clients
