@@ -26,7 +26,7 @@ type netConnectM1ToM3Model struct {
 	M3ServerType        string                  `tfsdk:"m3_server_type"`
 	M3PortId            string                  `tfsdk:"m3_port_id"`
 	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
-	M3VpcepServiceName  string                  `tfsdk:"m3_vpcep_service_name"`
+	M3VpcepServiceName  types.String            `tfsdk:"m3_vpcep_service_name"`
 	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
 	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
 	DnsDomain           string                  `tfsdk:"dns_domain"`
@@ -100,7 +100,7 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	// Step 1 - 在 M3 侧创建 VPCEP-Service
-	vpcepServiceId, err := r.createVpcepService(ctx, &plan)
+	vpcepServiceId, err := r.createM3VpcepService(ctx, &plan)
 	if err != nil {
 		resp.Diagnostics.AddError("create VPCEP service failed", err.Error())
 		return
@@ -138,7 +138,7 @@ func getPortProtocol(protocol string) *model.PortListProtocol {
 	}
 }
 
-func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan *netConnectM1ToM3Model) (string,
+func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, plan *netConnectM1ToM3Model) (string,
 	error) {
 	ports := make([]model.PortList, len(plan.M3VpcepServicePorts))
 	for i := range plan.M3VpcepServicePorts {
@@ -163,8 +163,9 @@ func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan 
 			IpVersion:       &ipVersion,
 		},
 	}
-	if plan.M3VpcepServiceName != "" {
-		createReq.Body.ServiceName = &plan.M3VpcepServiceName
+	if !plan.M3VpcepServiceName.IsNull() {
+		serviceName := plan.M3VpcepServiceName.ValueString()
+		createReq.Body.ServiceName = &serviceName
 	}
 
 	requestJson, err := json.Marshal(createReq.Body)
@@ -207,9 +208,13 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	// 查询 VPCEP-Service 状态
+	// cmt:[一般] 检视意见: Read函数未将查询到的VPCEP-Service状态更新到资源状态中。例如，getResp.Status未被用于更新state.Status，导致Terraform无法感知资源状态的外部变更。
+	// 场景名: default/通用， Agent: default， 置信度: 10（建议采纳）
+	// 修复建议: 在Read函数中，应将查询到的服务状态（如getResp.Status）更新到state对象中，确保资源状态与实际状态一致。
 	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
 
 	getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
+	// cmt: [一般] err需要细分一下，是未查询到VPCEP-Service还是查询失败，如果是未查询到，需要 resp.State.RemoveResource(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
 		return
