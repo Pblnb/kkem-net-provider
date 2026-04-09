@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -157,11 +158,14 @@ func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan 
 		},
 	}
 
+	requestJson, err := json.Marshal(createReq.Body)
+	if err != nil {
+		tflog.Warn(ctx, "Failed to marshal VPCEP-Service request", map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
 	tflog.Debug(ctx, "Creating VPCEP-Service", map[string]interface{}{
-		"vpc_id":      plan.M3VpcId,
-		"port_id":     plan.M3PortId,
-		"server_type": plan.M3ServerType,
-		"ports_count": len(ports),
+		"request": string(requestJson),
 	})
 
 	createResp, err := r.m3VpcepClient.CreateEndpointService(createReq)
