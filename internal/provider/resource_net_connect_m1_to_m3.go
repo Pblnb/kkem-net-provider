@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
@@ -28,9 +29,9 @@ type netConnectM1ToM3Model struct {
 	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
 	DnsDomain           string                  `tfsdk:"dns_domain"`
 	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
-	VpcepServiceId      *string                 `tfsdk:"vpcep_service_id"`
-	VpcepClientId       *string                 `tfsdk:"vpcep_client_id"`
-	VpcepClientIp       *string                 `tfsdk:"vpcep_client_ip"`
+	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
+	VpcepClientId       types.String            `tfsdk:"vpcep_client_id"`
+	VpcepClientIp       types.String            `tfsdk:"vpcep_client_ip"`
 }
 
 type vpcepServicePortBlock struct {
@@ -101,16 +102,15 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("create VPCEP service failed", err.Error())
 		return
 	}
-	plan.VpcepServiceId = &vpcepServiceId
+	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
 
 	// Step 2 - 配置 VPCEP-Service 白名单（当前跳过，approval_enabled=false）
 	// Step 3 - 在 M1+ 侧创建 VPCEP-Client（TODO）
 	// Step 4 - 轮询等待 Client 状态就绪（TODO）
 	// Step 5 - 调用内网 DNS API 创建解析记录（TODO）
 
-	emptyStr := ""
-	plan.VpcepClientId = &emptyStr
-	plan.VpcepClientIp = &emptyStr
+	plan.VpcepClientId = types.StringValue("")
+	plan.VpcepClientIp = types.StringValue("")
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -189,12 +189,12 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	if state.VpcepServiceId == nil {
+	if state.VpcepServiceId.IsNull() {
 		return
 	}
 
 	// 查询 VPCEP-Service 状态
-	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: *state.VpcepServiceId}
+	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
 
 	getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
 	if err != nil {
@@ -203,7 +203,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	tflog.Debug(ctx, "VPCEP-Service status", map[string]interface{}{
-		"service_id": *state.VpcepServiceId,
+		"service_id": state.VpcepServiceId.ValueString(),
 		"status":     *getResp.Status,
 	})
 
@@ -227,7 +227,7 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	if state.VpcepServiceId == nil {
+	if state.VpcepServiceId.IsNull() {
 		return
 	}
 
@@ -238,11 +238,11 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 
 	// Step 3 - 删除 M3 侧 VPCEP-Service
 	deleteReq := &model.DeleteEndpointServiceRequest{
-		VpcEndpointServiceId: *state.VpcepServiceId,
+		VpcEndpointServiceId: state.VpcepServiceId.ValueString(),
 	}
 
 	tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]interface{}{
-		"service_id": *state.VpcepServiceId,
+		"service_id": state.VpcepServiceId.ValueString(),
 	})
 
 	_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
@@ -252,6 +252,6 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 	}
 
 	tflog.Info(ctx, "VPCEP-Service deleted", map[string]interface{}{
-		"service_id": *state.VpcepServiceId,
+		"service_id": state.VpcepServiceId.ValueString(),
 	})
 }
