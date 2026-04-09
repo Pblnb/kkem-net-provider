@@ -26,6 +26,7 @@ type netConnectM1ToM3Model struct {
 	M3ServerType        string                  `tfsdk:"m3_server_type"`
 	M3PortId            string                  `tfsdk:"m3_port_id"`
 	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
+	M3VpcepServiceName  string                  `tfsdk:"m3_vpcep_service_name"`
 	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
 	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
 	DnsDomain           string                  `tfsdk:"dns_domain"`
@@ -63,13 +64,14 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 					"server_port": schema.Int64Attribute{Required: true},
 					"protocol":    schema.StringAttribute{Required: true},
 				}}},
-			"m1_plus_vpc_id":    schema.StringAttribute{Required: true},
-			"m1_plus_subnet_id": schema.StringAttribute{Required: true},
-			"dns_domain":        schema.StringAttribute{Required: true},
-			"dns_domain_suffix": schema.StringAttribute{Required: true},
-			"vpcep_service_id":  schema.StringAttribute{Computed: true},
-			"vpcep_client_id":   schema.StringAttribute{Computed: true},
-			"vpcep_client_ip":   schema.StringAttribute{Computed: true},
+			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
+			"m1_plus_vpc_id":        schema.StringAttribute{Required: true},
+			"m1_plus_subnet_id":     schema.StringAttribute{Required: true},
+			"dns_domain":            schema.StringAttribute{Required: true},
+			"dns_domain_suffix":     schema.StringAttribute{Required: true},
+			"vpcep_service_id":      schema.StringAttribute{Computed: true},
+			"vpcep_client_id":       schema.StringAttribute{Computed: true},
+			"vpcep_client_ip":       schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -147,7 +149,10 @@ func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan 
 		}
 	}
 
+	// VPCEP-Service 不启用连接审批
 	approvalEnabled := false
+	// 当前固定创建单栈 IPv4 的 VPCEP-Service
+	ipVersion := model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4
 	createReq := &model.CreateEndpointServiceRequest{
 		Body: &model.CreateEndpointServiceRequestBody{
 			VpcId:           plan.M3VpcId,
@@ -155,7 +160,11 @@ func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan 
 			ServerType:      getVpcepServerType(plan.M3ServerType),
 			ApprovalEnabled: &approvalEnabled,
 			Ports:           ports,
+			IpVersion:       &ipVersion,
 		},
+	}
+	if plan.M3VpcepServiceName != "" {
+		createReq.Body.ServiceName = &plan.M3VpcepServiceName
 	}
 
 	requestJson, err := json.Marshal(createReq.Body)
