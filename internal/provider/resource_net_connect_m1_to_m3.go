@@ -114,26 +114,35 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
+// getVpcepServerType 将字符串转换为 API 调用所需类型。注意：目前仅支持 VM 和 LB 两种类型，默认返回 LB。
+func getVpcepServerType(serverType string) model.CreateEndpointServiceRequestBodyServerType {
+	switch serverType {
+	case "VM":
+		return model.GetCreateEndpointServiceRequestBodyServerTypeEnum().VM
+	default:
+		return model.GetCreateEndpointServiceRequestBodyServerTypeEnum().LB
+	}
+}
+
+// getPortProtocol 将协议字符串转换为 API 调用所需类型。注意：目前仅支持 TCP，默认也返回 TCP。
+func getPortProtocol(protocol string) *model.PortListProtocol {
+	tcpProtocol := model.GetPortListProtocolEnum().TCP
+	switch protocol {
+	case "TCP":
+		return &tcpProtocol
+	default:
+		return &tcpProtocol
+	}
+}
+
 func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan *netConnectM1ToM3Model) (string,
 	error) {
-	// cmt: [建议] 这一段可以提取成一个 getVpcepServerType 的超简易工厂函数，提高可读性和后续维护成本么？
-	serverType := model.GetCreateEndpointServiceRequestBodyServerTypeEnum().LB
-	switch plan.M3ServerType {
-	case "VM":
-		serverType = model.GetCreateEndpointServiceRequestBodyServerTypeEnum().VM
-	case "LB":
-		serverType = model.GetCreateEndpointServiceRequestBodyServerTypeEnum().LB
-	}
-
 	ports := make([]model.PortList, len(plan.M3VpcepServicePorts))
-
-	// cmt: [建议] 这里的 port 是不是可以也可以用类似 ServerType 的方式处理，只不过当前总是会返回 TCP 而已，便于后续扩展
-	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	for i := range plan.M3VpcepServicePorts {
 		ports[i] = model.PortList{
 			ClientPort: &plan.M3VpcepServicePorts[i].ClientPort,
 			ServerPort: &plan.M3VpcepServicePorts[i].ServerPort,
-			Protocol:   &tcpProtocol,
+			Protocol:   getPortProtocol(plan.M3VpcepServicePorts[i].Protocol),
 		}
 	}
 
@@ -142,7 +151,7 @@ func (r *netConnectM1ToM3Resource) createVpcepService(ctx context.Context, plan 
 		Body: &model.CreateEndpointServiceRequestBody{
 			VpcId:           plan.M3VpcId,
 			PortId:          plan.M3PortId,
-			ServerType:      serverType,
+			ServerType:      getVpcepServerType(plan.M3ServerType),
 			ApprovalEnabled: &approvalEnabled,
 			Ports:           ports,
 		},
