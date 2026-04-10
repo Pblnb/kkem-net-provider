@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -48,6 +49,7 @@ func NewNetConnectM1ToM3Resource() resource.Resource {
 
 func (r *netConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp *resource.MetadataResponse) {
+	// cmt:_net_connect_m1_to_m3 此处抽取一个常量吧，命名能说明其含义
 	resp.TypeName = req.ProviderTypeName + "_net_connect_m1_to_m3"
 }
 
@@ -60,8 +62,8 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_port_id":     schema.StringAttribute{Required: true},
 			"m3_vpcep_service_ports": schema.ListNestedAttribute{Required: true,
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-					"client_port": schema.Int64Attribute{Required: true},
-					"server_port": schema.Int64Attribute{Required: true},
+					"client_port": schema.Int32Attribute{Required: true},
+					"server_port": schema.Int32Attribute{Required: true},
 					"protocol":    schema.StringAttribute{Required: true},
 				}}},
 			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
@@ -92,6 +94,7 @@ func (r *netConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 
 func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
+	// cmt:此处日志是否需要放入特征信息，比如能知道是谁的M1_M3网络打通开始create了
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started")
 	var plan netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -112,8 +115,8 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	// Step 4 - 轮询等待 Client 状态就绪（TODO）
 	// Step 5 - 调用内网 DNS API 创建解析记录（TODO）
 
-	plan.VpcepClientId = types.StringValue("")
-	plan.VpcepClientIp = types.StringValue("")
+	plan.VpcepClientId = types.StringNull()
+	plan.VpcepClientIp = types.StringNull()
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -127,6 +130,7 @@ func getVpcepServerType(serverType string) model.CreateEndpointServiceRequestBod
 	}
 }
 
+// cmt:粗暴点，直接代码里写死 TCP 吧，也不需要用户在 schema 里配置了这个参数了
 // getPortProtocol 将协议字符串转换为 API 调用所需类型。注意：目前仅支持 TCP，默认也返回 TCP。
 func getPortProtocol(protocol string) *model.PortListProtocol {
 	tcpProtocol := model.GetPortListProtocolEnum().TCP
@@ -155,9 +159,10 @@ func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, pla
 	ipVersion := model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4
 	createReq := &model.CreateEndpointServiceRequest{
 		Body: &model.CreateEndpointServiceRequestBody{
-			VpcId:           plan.M3VpcId,
-			PortId:          plan.M3PortId,
-			ServerType:      getVpcepServerType(plan.M3ServerType),
+			VpcId:      plan.M3VpcId,
+			PortId:     plan.M3PortId,
+			ServerType: getVpcepServerType(plan.M3ServerType),
+			// cmt: 可以用 ptr 工具包里的函数代替 approvalEnabled := false 声明后在这里引用么？
 			ApprovalEnabled: &approvalEnabled,
 			Ports:           ports,
 			IpVersion:       &ipVersion,
@@ -195,6 +200,10 @@ func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, pla
 	return *createResp.Id, nil
 }
 
+// Read 逻辑：
+// - VpcepServiceId 有值 → 查询 API 验证存在性，404 → null
+// - VpcepServiceId 为 null → 直接信任 state
+// - 全部子资源均为 null → RemoveResource
 func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Read started")
 	var state netConnectM1ToM3Model
@@ -203,27 +212,32 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	if state.VpcepServiceId.IsNull() {
-		return
+	// 验证 VPCEP-Service 是否仍存在
+	if !state.VpcepServiceId.IsNull() {
+		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
+		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
+		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "404") {
+				tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
+					"service_id": state.VpcepServiceId.ValueString(),
+				})
+				state.VpcepServiceId = types.StringNull()
+			} else {
+				resp.Diagnostics.AddError("query VPCEP service failed", errMsg)
+				return
+			}
+		}
 	}
 
-	// 查询 VPCEP-Service 状态
-	// cmt:[一般] 检视意见: Read函数未将查询到的VPCEP-Service状态更新到资源状态中。例如，getResp.Status未被用于更新state.Status，导致Terraform无法感知资源状态的外部变更。
-	// 场景名: default/通用， Agent: default， 置信度: 10（建议采纳）
-	// 修复建议: 在Read函数中，应将查询到的服务状态（如getResp.Status）更新到state对象中，确保资源状态与实际状态一致。
-	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
+	// TODO: 验证 VPCEP-Client 是否仍存在（当VpcepClientId有值时）
 
-	getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
-	// cmt: [一般] err需要细分一下，是未查询到VPCEP-Service还是查询失败，如果是未查询到，需要 resp.State.RemoveResource(ctx)
-	if err != nil {
-		resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
+	// 全部子资源均不存在时，移除整个 resource
+	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepClientId.IsNull() && state.VpcepClientIp.IsNull()
+	if allRemoved {
+		resp.State.RemoveResource(ctx)
 		return
 	}
-
-	tflog.Debug(ctx, "VPCEP-Service status", map[string]interface{}{
-		"service_id": state.VpcepServiceId.ValueString(),
-		"status":     *getResp.Status,
-	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -245,31 +259,35 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	if state.VpcepServiceId.IsNull() {
-		return
-	}
-
 	// 删除顺序：DNS → VPCEP-Client → VPCEP-Service
 	// Step 1 - 删除内网 DNS 解析记录（TODO）
-
 	// Step 2 - 删除 M1+ 侧 VPCEP-Client（TODO）
+	// Step 3 - 删除 M3 侧 VPCEP-Service（幂等删除：404视为已删除）
+	if !state.VpcepServiceId.IsNull() {
+		deleteReq := &model.DeleteEndpointServiceRequest{
+			VpcEndpointServiceId: state.VpcepServiceId.ValueString(),
+		}
 
-	// Step 3 - 删除 M3 侧 VPCEP-Service
-	deleteReq := &model.DeleteEndpointServiceRequest{
-		VpcEndpointServiceId: state.VpcepServiceId.ValueString(),
+		tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]interface{}{
+			"service_id": state.VpcepServiceId.ValueString(),
+		})
+
+		_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
+		if err != nil {
+			errMsg := err.Error()
+			if !(strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NotFound")) {
+				resp.Diagnostics.AddError("delete VPCEP service failed", errMsg)
+				return
+			}
+			tflog.Info(ctx, "VPCEP-Service already deleted or not found", map[string]interface{}{
+				"service_id": state.VpcepServiceId.ValueString(),
+			})
+		} else {
+			tflog.Info(ctx, "VPCEP-Service deleted", map[string]interface{}{
+				"service_id": state.VpcepServiceId.ValueString(),
+			})
+		}
 	}
 
-	tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]interface{}{
-		"service_id": state.VpcepServiceId.ValueString(),
-	})
-
-	_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
-	if err != nil {
-		resp.Diagnostics.AddError("delete VPCEP service failed", err.Error())
-		return
-	}
-
-	tflog.Info(ctx, "VPCEP-Service deleted", map[string]interface{}{
-		"service_id": state.VpcepServiceId.ValueString(),
-	})
+	resp.State.RemoveResource(ctx)
 }
