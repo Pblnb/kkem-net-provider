@@ -8,8 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -207,16 +205,17 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	// 验证 VPCEP-Service 是否仍存在
 	if !state.VpcepServiceId.IsNull() {
 		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
-		getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
+		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
 		if err != nil {
-			resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
-			return
-		}
-		if getResp.HttpStatusCode == http.StatusNotFound {
-			tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
-				"service_id": state.VpcepServiceId.ValueString(),
-			})
-			state.VpcepServiceId = types.StringNull()
+			if utils.IsNotFoundError(err) {
+				tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
+					"service_id": state.VpcepServiceId.ValueString(),
+				})
+				state.VpcepServiceId = types.StringNull()
+			} else {
+				resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
+				return
+			}
 		}
 	}
 
@@ -265,9 +264,8 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 
 		_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
 		if err != nil {
-			errMsg := err.Error()
-			if !(strings.Contains(errMsg, "404") || strings.Contains(errMsg, "NotFound")) {
-				resp.Diagnostics.AddError("delete VPCEP service failed", errMsg)
+			if !utils.IsNotFoundError(err) {
+				resp.Diagnostics.AddError("delete VPCEP service failed", err.Error())
 				return
 			}
 			tflog.Info(ctx, "VPCEP-Service already deleted or not found", map[string]interface{}{
