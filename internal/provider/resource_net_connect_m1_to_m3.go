@@ -108,7 +108,7 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 
-	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started", map[string]interface{}{
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started", map[string]any{
 		"m3_vpc_id":      plan.M3VpcId,
 		"m3_port_id":     plan.M3PortId,
 		"m1_plus_vpc_id": plan.M1PlusVpcId,
@@ -128,8 +128,12 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	vpcepClientId, err := r.createM1PlusVpcepClient(ctx, &plan, vpcepServiceId)
 	if err != nil {
 		// 回滚：删除已创建的 VPCEP-Service
-		// cmt: [一般] 补充错误处理
-		r.deleteM3VpcepService(ctx, vpcepServiceId)
+		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
+			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
+				"service_id": vpcepServiceId,
+				"error":      rollbackErr.Error(),
+			})
+		}
 		resp.Diagnostics.AddError("create VPCEP client failed", err.Error())
 		return
 	}
@@ -140,16 +144,19 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	if err != nil {
 		// 回滚：删除 VPCEP-Client 和 Service
 		r.deleteM1PlusVpcepClient(ctx, vpcepClientId)
-		// cmt: [一般] 补充错误处理
-		r.deleteM3VpcepService(ctx, vpcepServiceId)
+		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
+			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
+				"service_id": vpcepServiceId,
+				"error":      rollbackErr.Error(),
+			})
+		}
 		resp.Diagnostics.AddError("wait for VPCEP client ready failed", err.Error())
 		return
 	}
-	// cmt: [一般] 突然发现这里其实 IP 不需要写入 plan 吧，因为 Read 操作用不到
 	plan.VpcepClientIp = types.StringValue(clientIp)
 
 	// Step 5 - 调用内网 DNS API 创建解析记录（TODO）
-	tflog.Info(ctx, "Step 5 - DNS record creation not implemented yet", map[string]interface{}{
+	tflog.Info(ctx, "Step 5 - DNS record creation not implemented yet", map[string]any{
 		"dns_domain":        plan.DnsDomain,
 		"dns_domain_suffix": plan.DnsDomainSuffix,
 		"client_ip":         clientIp,
@@ -199,11 +206,11 @@ func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, pla
 
 	requestJson, err := json.Marshal(createReq.Body)
 	if err != nil {
-		tflog.Warn(ctx, "Failed to marshal VPCEP-Service request", map[string]interface{}{
+		tflog.Warn(ctx, "Failed to marshal VPCEP-Service request", map[string]any{
 			"error": err.Error(),
 		})
 	}
-	tflog.Debug(ctx, "Creating VPCEP-Service", map[string]interface{}{
+	tflog.Debug(ctx, "Creating VPCEP-Service", map[string]any{
 		"request": string(requestJson),
 	})
 
@@ -216,7 +223,7 @@ func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, pla
 		return "", fmt.Errorf("CreateEndpointService response has no ID")
 	}
 
-	tflog.Info(ctx, "VPCEP-Service created", map[string]interface{}{
+	tflog.Info(ctx, "VPCEP-Service created", map[string]any{
 		"service_id": *createResp.Id,
 		"status":     *createResp.Status,
 	})
@@ -235,7 +242,7 @@ func (r *netConnectM1ToM3Resource) createM1PlusVpcepClient(ctx context.Context, 
 		},
 	}
 
-	tflog.Debug(ctx, "Creating VPCEP-Client", map[string]interface{}{
+	tflog.Debug(ctx, "Creating VPCEP-Client", map[string]any{
 		"endpoint_service_id": serviceId,
 		"vpc_id":              plan.M1PlusVpcId,
 		"subnet_id":           plan.M1PlusSubnetId,
@@ -250,7 +257,7 @@ func (r *netConnectM1ToM3Resource) createM1PlusVpcepClient(ctx context.Context, 
 		return "", fmt.Errorf("CreateEndpoint response has no ID")
 	}
 
-	tflog.Info(ctx, "VPCEP-Client created", map[string]interface{}{
+	tflog.Info(ctx, "VPCEP-Client created", map[string]any{
 		"client_id": *createResp.Id,
 		"status":    *createResp.Status,
 	})
@@ -284,7 +291,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 			}
 
 			status := *getResp.Status
-			tflog.Debug(ctx, "VPCEP-Client status check", map[string]interface{}{
+			tflog.Debug(ctx, "VPCEP-Client status check", map[string]any{
 				"client_id": clientId,
 				"status":    status,
 			})
@@ -294,7 +301,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 				if getResp.Ip == nil {
 					return "", fmt.Errorf("VPCEP-Client is accepted but has no IP")
 				}
-				tflog.Info(ctx, "VPCEP-Client is ready", map[string]interface{}{
+				tflog.Info(ctx, "VPCEP-Client is ready", map[string]any{
 					"client_id": clientId,
 					"ip":        *getResp.Ip,
 				})
@@ -306,7 +313,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 				continue
 			default:
 				// 未知状态，继续轮询
-				tflog.Warn(ctx, "VPCEP-Client unknown status", map[string]interface{}{
+				tflog.Warn(ctx, "VPCEP-Client unknown status", map[string]any{
 					"client_id": clientId,
 					"status":    status,
 				})
@@ -320,24 +327,24 @@ func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepClient(ctx context.Context, 
 		VpcEndpointId: clientId,
 	}
 
-	tflog.Debug(ctx, "Deleting VPCEP-Client", map[string]interface{}{
+	tflog.Debug(ctx, "Deleting VPCEP-Client", map[string]any{
 		"client_id": clientId,
 	})
 
 	_, err := r.m1PlusVpcepClient.DeleteEndpoint(deleteReq)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
-			tflog.Warn(ctx, "Failed to delete VPCEP-Client", map[string]interface{}{
+			tflog.Warn(ctx, "Failed to delete VPCEP-Client", map[string]any{
 				"client_id": clientId,
 				"error":     err.Error(),
 			})
 			return
 		}
-		tflog.Info(ctx, "VPCEP-Client already deleted or not found", map[string]interface{}{
+		tflog.Info(ctx, "VPCEP-Client already deleted or not found", map[string]any{
 			"client_id": clientId,
 		})
 	} else {
-		tflog.Info(ctx, "VPCEP-Client deleted", map[string]interface{}{
+		tflog.Info(ctx, "VPCEP-Client deleted", map[string]any{
 			"client_id": clientId,
 		})
 	}
@@ -348,24 +355,24 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 		VpcEndpointServiceId: serviceId,
 	}
 
-	tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]interface{}{
+	tflog.Debug(ctx, "Deleting VPCEP-Service", map[string]any{
 		"service_id": serviceId,
 	})
 
 	_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
-			tflog.Warn(ctx, "Failed to delete VPCEP-Service", map[string]interface{}{
+			tflog.Warn(ctx, "Failed to delete VPCEP-Service", map[string]any{
 				"service_id": serviceId,
 				"error":      err.Error(),
 			})
 			return err
 		}
-		tflog.Info(ctx, "VPCEP-Service already deleted or not found", map[string]interface{}{
+		tflog.Info(ctx, "VPCEP-Service already deleted or not found", map[string]any{
 			"service_id": serviceId,
 		})
 	} else {
-		tflog.Info(ctx, "VPCEP-Service deleted", map[string]interface{}{
+		tflog.Info(ctx, "VPCEP-Service deleted", map[string]any{
 			"service_id": serviceId,
 		})
 	}
@@ -390,7 +397,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
 		if err != nil {
 			if utils.IsNotFoundError(err) {
-				tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
+				tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]any{
 					"service_id": state.VpcepServiceId.ValueString(),
 				})
 				state.VpcepServiceId = types.StringNull()

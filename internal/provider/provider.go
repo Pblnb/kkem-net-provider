@@ -36,7 +36,7 @@ type kkemNetProviderModel struct {
 type clients struct {
 	m1PlusVpcepClient *vpcep.VpcepClient
 	m3VpcepClient     *vpcep.VpcepClient
-	m3DnsClient       interface{} // TODO
+	m3DnsClient       any // TODO
 }
 
 type KkemProvider struct {
@@ -138,7 +138,7 @@ func (p *KkemProvider) buildVpcepClient(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("create %s VPCEP client failed: %w", label, err)
 	}
-	tflog.Info(ctx, fmt.Sprintf("%s VPCEP client created", label), map[string]interface{}{
+	tflog.Info(ctx, fmt.Sprintf("%s VPCEP client created", label), map[string]any{
 		"endpoint": endpoint,
 	})
 	return client, nil
@@ -171,7 +171,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		m3VpcepClient:     m3VpcepClient,
 	}
 
-	tflog.Info(ctx, "KkemProvider initialized", map[string]interface{}{
+	tflog.Info(ctx, "KkemProvider initialized", map[string]any{
 		"m1_plus_project_id": data.M1Plus.ProjectId,
 		"m3_project_id":      data.M3.ProjectId,
 		"vpcep_endpoint":     data.VpcepEndpoint,
