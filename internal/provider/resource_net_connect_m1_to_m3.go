@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -16,7 +17,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
+
+	"huawei.com/kkem/kkem-net-provider/internal/utils"
 )
+
+const resourceTypeName = "_net_connect_m1_to_m3"
 
 type netConnectM1ToM3Resource struct {
 	m3VpcepClient *vpcep.VpcepClient
@@ -38,9 +43,8 @@ type netConnectM1ToM3Model struct {
 }
 
 type vpcepServicePortBlock struct {
-	ClientPort int32  `tfsdk:"client_port"`
-	ServerPort int32  `tfsdk:"server_port"`
-	Protocol   string `tfsdk:"protocol"`
+	ClientPort int32 `tfsdk:"client_port"`
+	ServerPort int32 `tfsdk:"server_port"`
 }
 
 func NewNetConnectM1ToM3Resource() resource.Resource {
@@ -49,8 +53,7 @@ func NewNetConnectM1ToM3Resource() resource.Resource {
 
 func (r *netConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp *resource.MetadataResponse) {
-	// cmt:_net_connect_m1_to_m3 此处抽取一个常量吧，命名能说明其含义
-	resp.TypeName = req.ProviderTypeName + "_net_connect_m1_to_m3"
+	resp.TypeName = req.ProviderTypeName + resourceTypeName
 }
 
 func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.SchemaRequest,
@@ -64,7 +67,6 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"client_port": schema.Int32Attribute{Required: true},
 					"server_port": schema.Int32Attribute{Required: true},
-					"protocol":    schema.StringAttribute{Required: true},
 				}}},
 			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
 			"m1_plus_vpc_id":        schema.StringAttribute{Required: true},
@@ -94,13 +96,17 @@ func (r *netConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 
 func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
-	// cmt:此处日志是否需要放入特征信息，比如能知道是谁的M1_M3网络打通开始create了
-	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started")
 	var plan netConnectM1ToM3Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create started", map[string]interface{}{
+		"m3_vpc_id":      plan.M3VpcId,
+		"m3_port_id":     plan.M3PortId,
+		"m1_plus_vpc_id": plan.M1PlusVpcId,
+	})
 
 	// Step 1 - 在 M3 侧创建 VPCEP-Service
 	vpcepServiceId, err := r.createM3VpcepService(ctx, &plan)
@@ -130,40 +136,26 @@ func getVpcepServerType(serverType string) model.CreateEndpointServiceRequestBod
 	}
 }
 
-// cmt:粗暴点，直接代码里写死 TCP 吧，也不需要用户在 schema 里配置了这个参数了
-// getPortProtocol 将协议字符串转换为 API 调用所需类型。注意：目前仅支持 TCP，默认也返回 TCP。
-func getPortProtocol(protocol string) *model.PortListProtocol {
-	tcpProtocol := model.GetPortListProtocolEnum().TCP
-	switch protocol {
-	case "TCP":
-		return &tcpProtocol
-	default:
-		return &tcpProtocol
-	}
-}
-
 func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, plan *netConnectM1ToM3Model) (string,
 	error) {
+	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	ports := make([]model.PortList, len(plan.M3VpcepServicePorts))
 	for i := range plan.M3VpcepServicePorts {
 		ports[i] = model.PortList{
 			ClientPort: &plan.M3VpcepServicePorts[i].ClientPort,
 			ServerPort: &plan.M3VpcepServicePorts[i].ServerPort,
-			Protocol:   getPortProtocol(plan.M3VpcepServicePorts[i].Protocol),
+			Protocol:   &tcpProtocol,
 		}
 	}
 
-	// VPCEP-Service 不启用连接审批
-	approvalEnabled := false
-	// 当前固定创建单栈 IPv4 的 VPCEP-Service
+	// 当前固定创建单栈 IPv4、不启用审批的 VPCEP-Service
 	ipVersion := model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4
 	createReq := &model.CreateEndpointServiceRequest{
 		Body: &model.CreateEndpointServiceRequestBody{
-			VpcId:      plan.M3VpcId,
-			PortId:     plan.M3PortId,
-			ServerType: getVpcepServerType(plan.M3ServerType),
-			// cmt: 可以用 ptr 工具包里的函数代替 approvalEnabled := false 声明后在这里引用么？
-			ApprovalEnabled: &approvalEnabled,
+			VpcId:           plan.M3VpcId,
+			PortId:          plan.M3PortId,
+			ServerType:      getVpcepServerType(plan.M3ServerType),
+			ApprovalEnabled: utils.BoolPtr(false),
 			Ports:           ports,
 			IpVersion:       &ipVersion,
 		},
@@ -215,18 +207,16 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	// 验证 VPCEP-Service 是否仍存在
 	if !state.VpcepServiceId.IsNull() {
 		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
-		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
+		getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
 		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "404") {
-				tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
-					"service_id": state.VpcepServiceId.ValueString(),
-				})
-				state.VpcepServiceId = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("query VPCEP service failed", errMsg)
-				return
-			}
+			resp.Diagnostics.AddError("query VPCEP service failed", err.Error())
+			return
+		}
+		if getResp.HttpStatusCode == http.StatusNotFound {
+			tflog.Info(ctx, "VPCEP-Service not found, marking as null", map[string]interface{}{
+				"service_id": state.VpcepServiceId.ValueString(),
+			})
+			state.VpcepServiceId = types.StringNull()
 		}
 	}
 
@@ -235,6 +225,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	// 全部子资源均不存在时，移除整个 resource
 	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepClientId.IsNull() && state.VpcepClientIp.IsNull()
 	if allRemoved {
+		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
 		return
 	}
