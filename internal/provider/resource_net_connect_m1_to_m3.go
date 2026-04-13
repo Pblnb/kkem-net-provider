@@ -40,6 +40,7 @@ type netConnectM1ToM3Model struct {
 	M3VpcepServiceName  types.String            `tfsdk:"m3_vpcep_service_name"`
 	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
 	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
+	M1PlusDomainId      string                  `tfsdk:"m1_plus_domain_id"`
 	DnsDomain           string                  `tfsdk:"dns_domain"`
 	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
 	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
@@ -76,6 +77,7 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
 			"m1_plus_vpc_id":        schema.StringAttribute{Required: true},
 			"m1_plus_subnet_id":     schema.StringAttribute{Required: true},
+			"m1_plus_domain_id":     schema.StringAttribute{Required: true},
 			"dns_domain":            schema.StringAttribute{Required: true},
 			"dns_domain_suffix":     schema.StringAttribute{Required: true},
 			"vpcep_service_id":      schema.StringAttribute{Computed: true},
@@ -122,7 +124,18 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	}
 	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
 
-	// Step 2 - 配置 VPCEP-Service 白名单（当前跳过，approval_enabled=false）
+	// Step 2 - 配置 VPCEP-Service 白名单
+	if err := r.addVpcepServicePermission(ctx, vpcepServiceId, plan.M1PlusDomainId); err != nil {
+		// 回滚：删除已创建的 VPCEP-Service
+		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
+			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
+				"service_id": vpcepServiceId,
+				"error":      rollbackErr.Error(),
+			})
+		}
+		resp.Diagnostics.AddError("add VPCEP service permission failed", err.Error())
+		return
+	}
 
 	// Step 3 - 在 M1+ 侧创建 VPCEP-Client
 	vpcepClientId, err := r.createM1PlusVpcepClient(ctx, &plan, vpcepServiceId)
@@ -376,6 +389,39 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 			"service_id": serviceId,
 		})
 	}
+	return nil
+}
+
+// addVpcepServicePermission 为 VPCEP-Service 添加白名单权限。
+func (r *netConnectM1ToM3Resource) addVpcepServicePermission(ctx context.Context, serviceId, domainId string) error {
+	permission := fmt.Sprintf("iam:domain::%s", domainId)
+
+	req := &model.BatchAddEndpointServicePermissionsRequest{
+		VpcEndpointServiceId: serviceId,
+		Body: &model.BatchAddEndpointServicePermissionsRequestBody{
+			Permissions: []model.EpsAddPermissionRequest{
+				{
+					Permission:  permission,
+					Description: "Allow access from M1+ domain",
+				},
+			},
+		},
+	}
+
+	tflog.Debug(ctx, "Adding VPCEP-Service permission", map[string]any{
+		"service_id": serviceId,
+		"domain_id":  domainId,
+	})
+
+	_, err := r.m3VpcepClient.BatchAddEndpointServicePermissions(req)
+	if err != nil {
+		return fmt.Errorf("BatchAddEndpointServicePermissions API failed: %w", err)
+	}
+
+	tflog.Info(ctx, "VPCEP-Service permission added", map[string]any{
+		"service_id": serviceId,
+		"domain_id":  domainId,
+	})
 	return nil
 }
 
