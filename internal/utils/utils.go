@@ -6,6 +6,7 @@ package utils
 
 import (
 	"errors"
+	"net/http"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 )
@@ -24,7 +25,7 @@ func IsNotFoundError(err error) bool {
 
 	var serviceErr *sdkerr.ServiceResponseError
 	if errors.As(err, &serviceErr) {
-		return serviceErr.StatusCode == 404
+		return serviceErr.StatusCode == http.StatusNotFound
 	}
 
 	return false
