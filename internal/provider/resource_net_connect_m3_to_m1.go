@@ -19,8 +19,8 @@ type netConnectM3ToM1Model struct {
 	M3SubnetId              string `tfsdk:"m3_subnet_id"`
 	M1PlusSniProxyServiceId string `tfsdk:"m1_plus_sni_proxy_service_id"`
 	ServiceDomain           string `tfsdk:"service_domain"`
-	VpcepClientId           string `tfsdk:"vpcep_client_id"`
-	VpcepClientIp           string `tfsdk:"vpcep_client_ip"`
+	VpcepEndpointId         string `tfsdk:"vpcep_endpoint_id"`
+	VpcepEndpointIp         string `tfsdk:"vpcep_endpoint_ip"`
 	DnsARecordId            string `tfsdk:"dns_a_record_id"`
 }
 
@@ -41,8 +41,8 @@ func (r *NetConnectM3ToM1Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_subnet_id":                 schema.StringAttribute{Required: true},
 			"m1_plus_sni_proxy_service_id": schema.StringAttribute{Required: true},
 			"service_domain":               schema.StringAttribute{Required: true},
-			"vpcep_client_id":              schema.StringAttribute{Computed: true},
-			"vpcep_client_ip":              schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_id":            schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_ip":            schema.StringAttribute{Computed: true},
 			"dns_a_record_id":              schema.StringAttribute{Computed: true},
 		},
 	}
@@ -57,8 +57,8 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Create called")
 	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	plan.VpcepClientId = "demo_client_id"
-	plan.VpcepClientIp = "10.0.0.100"
+	plan.VpcepEndpointId = "demo_client_id"
+	plan.VpcepEndpointIp = "10.0.0.100"
 	plan.DnsARecordId = "demo_dns_record_id"
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
