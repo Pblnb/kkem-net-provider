@@ -40,14 +40,17 @@ type netConnectM1ToM3Model struct {
 	M3PortId            string                  `tfsdk:"m3_port_id"`
 	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
 	M3VpcepServiceName  types.String            `tfsdk:"m3_vpcep_service_name"`
-	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
-	M1PlusDomainId      string                  `tfsdk:"m1_plus_domain_id"`
-	DnsDomain           string                  `tfsdk:"dns_domain"`
-	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
-	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
-	VpcepClientId       types.String            `tfsdk:"vpcep_client_id"`
-	VpcepClientIp       types.String            `tfsdk:"vpcep_client_ip"`
+
+	M1PlusVpcId    string `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId string `tfsdk:"m1_plus_subnet_id"`
+	M1PlusDomainId string `tfsdk:"m1_plus_domain_id"`
+
+	DnsDomain       string `tfsdk:"dns_domain"`
+	DnsDomainSuffix string `tfsdk:"dns_domain_suffix"`
+
+	VpcepServiceId types.String `tfsdk:"vpcep_service_id"`
+	VpcepClientId  types.String `tfsdk:"vpcep_client_id"`
+	VpcepClientIp  types.String `tfsdk:"vpcep_client_ip"`
 }
 
 type vpcepServicePortBlock struct {
@@ -118,6 +121,15 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		"m1_plus_vpc_id": plan.M1PlusVpcId,
 	})
 
+	// success 标志：只有整个 Create 流程完全成功才设为 true，用于控制回滚
+	success := false
+	defer func() {
+		if !success {
+			tflog.Info(ctx, "Create failed, executing rollback", map[string]any{})
+			r.rollbackCreate(ctx, &plan)
+		}
+	}()
+
 	// Step 1 - 在 M3 侧创建 VPCEP-Service
 	vpcepServiceId, err := r.createM3VpcepService(ctx, &plan)
 	if err != nil {
@@ -128,26 +140,12 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// Step 1.5 - 轮询等待 VPCEP-Service 状态变为 available
 	if err := r.waitForVpcepServiceReady(ctx, vpcepServiceId); err != nil {
-		// 回滚：删除已创建的 VPCEP-Service
-		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
-			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
-				"service_id": vpcepServiceId,
-				"error":      rollbackErr.Error(),
-			})
-		}
 		resp.Diagnostics.AddError("wait for VPCEP service ready failed", err.Error())
 		return
 	}
 
 	// Step 2 - 配置 VPCEP-Service 白名单
 	if err := r.addVpcepServicePermission(ctx, vpcepServiceId, plan.M1PlusDomainId); err != nil {
-		// 回滚：删除已创建的 VPCEP-Service
-		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
-			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
-				"service_id": vpcepServiceId,
-				"error":      rollbackErr.Error(),
-			})
-		}
 		resp.Diagnostics.AddError("add VPCEP service permission failed", err.Error())
 		return
 	}
@@ -155,13 +153,6 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	// Step 3 - 在 M1+ 侧创建 VPCEP-Client
 	vpcepClientId, err := r.createM1PlusVpcepClient(ctx, &plan, vpcepServiceId)
 	if err != nil {
-		// 回滚：删除已创建的 VPCEP-Service
-		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
-			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
-				"service_id": vpcepServiceId,
-				"error":      rollbackErr.Error(),
-			})
-		}
 		resp.Diagnostics.AddError("create VPCEP client failed", err.Error())
 		return
 	}
@@ -170,14 +161,6 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	// Step 4 - 轮询等待 Client 状态就绪
 	clientIp, err := r.waitForVpcepClientReady(ctx, vpcepClientId)
 	if err != nil {
-		// 回滚：删除 VPCEP-Client 和 Service
-		r.deleteM1PlusVpcepClient(ctx, vpcepClientId)
-		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
-			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
-				"service_id": vpcepServiceId,
-				"error":      rollbackErr.Error(),
-			})
-		}
 		resp.Diagnostics.AddError("wait for VPCEP client ready failed", err.Error())
 		return
 	}
@@ -190,6 +173,8 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		"client_ip":         clientIp,
 	})
 
+	// 全部流程成功完成
+	success = true
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -405,6 +390,25 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 		})
 	}
 	return nil
+}
+
+// rollbackCreate 根据 plan 中已创建的资源执行回滚清理。
+// 按照依赖逆序删除：Client → Service
+func (r *netConnectM1ToM3Resource) rollbackCreate(ctx context.Context, plan *netConnectM1ToM3Model) {
+	// 删除 VPCEP-Client（如果已创建）
+	if !plan.VpcepClientId.IsNull() {
+		r.deleteM1PlusVpcepClient(ctx, plan.VpcepClientId.ValueString())
+	}
+
+	// 删除 VPCEP-Service（如果已创建）
+	if !plan.VpcepServiceId.IsNull() {
+		if err := r.deleteM3VpcepService(ctx, plan.VpcepServiceId.ValueString()); err != nil {
+			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
+				"service_id": plan.VpcepServiceId.ValueString(),
+				"error":      err.Error(),
+			})
+		}
+	}
 }
 
 // waitForVpcepServiceReady 轮询等待 VPCEP-Service 状态变为 available。
