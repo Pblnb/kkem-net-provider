@@ -126,48 +126,66 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	defer func() {
 		if !success {
 			tflog.Info(ctx, "Create failed, executing rollback", map[string]any{})
+			// cmt: rollbackCreate 里调用 deleteM1PlusVpcepClient 和 deleteM3VpcepService 时，没有处理删除本身的错误返回导致 Create 的 resp.Diagnostics 被覆盖。用户只能看到原始错误，看不到回滚失败的信息。
 			r.rollbackCreate(ctx, &plan)
 		}
 	}()
 
-	// Step 1 - 在 M3 侧创建 VPCEP-Service
+	// Step 1.1 - 在 M3 侧创建 VPCEP-Service
 	vpcepServiceId, err := r.createM3VpcepService(ctx, &plan)
 	if err != nil {
 		resp.Diagnostics.AddError("create VPCEP service failed", err.Error())
 		return
 	}
 	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
+	tflog.Info(ctx, "Step 1.1 completed: VPCEP-Service created", map[string]any{
+		"service_id": vpcepServiceId,
+	})
 
-	// Step 1.5 - 轮询等待 VPCEP-Service 状态变为 available
+	// Step 1.2 - 轮询等待 VPCEP-Service 状态变为 available
 	if err := r.waitForVpcepServiceReady(ctx, vpcepServiceId); err != nil {
 		resp.Diagnostics.AddError("wait for VPCEP service ready failed", err.Error())
 		return
 	}
+	tflog.Info(ctx, "Step 1.2 completed: VPCEP-Service is ready", map[string]any{
+		"service_id": vpcepServiceId,
+	})
 
 	// Step 2 - 配置 VPCEP-Service 白名单
 	if err := r.addVpcepServicePermission(ctx, vpcepServiceId, plan.M1PlusDomainId); err != nil {
 		resp.Diagnostics.AddError("add VPCEP service permission failed", err.Error())
 		return
 	}
+	tflog.Info(ctx, "Step 2 completed: VPCEP-Service permission added", map[string]any{
+		"service_id": vpcepServiceId,
+		"domain_id":  plan.M1PlusDomainId,
+	})
 
-	// Step 3 - 在 M1+ 侧创建 VPCEP-Client
+	// Step 3.1 - 在 M1+ 侧创建 VPCEP-Client
 	vpcepClientId, err := r.createM1PlusVpcepClient(ctx, &plan, vpcepServiceId)
 	if err != nil {
 		resp.Diagnostics.AddError("create VPCEP client failed", err.Error())
 		return
 	}
 	plan.VpcepClientId = types.StringValue(vpcepClientId)
+	tflog.Info(ctx, "Step 3.1 completed: VPCEP-Client created", map[string]any{
+		"client_id": vpcepClientId,
+	})
 
-	// Step 4 - 轮询等待 Client 状态就绪
+	// Step 3.2 - 轮询等待 Client 状态就绪
 	clientIp, err := r.waitForVpcepClientReady(ctx, vpcepClientId)
 	if err != nil {
 		resp.Diagnostics.AddError("wait for VPCEP client ready failed", err.Error())
 		return
 	}
 	plan.VpcepClientIp = types.StringValue(clientIp)
+	tflog.Info(ctx, "Step 3.2 completed: VPCEP-Client is ready", map[string]any{
+		"client_id": vpcepClientId,
+		"ip":        clientIp,
+	})
 
-	// Step 5 - 调用内网 DNS API 创建解析记录（TODO）
-	tflog.Info(ctx, "Step 5 - DNS record creation not implemented yet", map[string]any{
+	// Step 4 - 调用内网 DNS API 创建解析记录（TODO）
+	tflog.Info(ctx, "Step 4 - DNS record creation not implemented yet", map[string]any{
 		"dns_domain":        plan.DnsDomain,
 		"dns_domain_suffix": plan.DnsDomainSuffix,
 		"client_ip":         clientIp,
@@ -175,6 +193,11 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// 全部流程成功完成
 	success = true
+	tflog.Info(ctx, "kkem_net_connect_m1_to_m3: Create completed", map[string]any{
+		"service_id": vpcepServiceId,
+		"client_id":  vpcepClientId,
+		"client_ip":  clientIp,
+	})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -263,6 +286,7 @@ func (r *netConnectM1ToM3Resource) createM1PlusVpcepClient(ctx context.Context, 
 
 	createResp, err := r.m1PlusVpcepClient.CreateEndpoint(createReq)
 	if err != nil {
+		// cmt: 这里如果 API 调用临时失败（网络抖动、服务端限流等），会立即返回错误，但实际场景不应该因为一次查询失败就放弃整个操作，应该重试几次
 		return "", fmt.Errorf("CreateEndpoint API failed: %w", err)
 	}
 
@@ -286,6 +310,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 	defer ticker.Stop()
 
 	for {
+		// cmt: 这里是否需要添加 context 取消检查，如果用户取消 Terraform 操作，轮询不会停止，会继续运行直到超时
 		select {
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for VPCEP-Client %s to be ready", clientId)
@@ -309,6 +334,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 				"status":    status,
 			})
 
+			// cmt: delete 状态缺失。VPCEP Client 存在 "deleting" 等终态，如果服务被并发删除，这里会进入 default 无限轮询直到超时。
 			switch status {
 			case "accepted":
 				if getResp.Ip == nil {
@@ -335,6 +361,8 @@ func (r *netConnectM1ToM3Resource) waitForVpcepClientReady(ctx context.Context,
 	}
 }
 
+// cmt: deleteM1PlusVpcepClient 返回值为 void（line 338），错误只打日志不向上抛，这里的设计意图不清晰。如果回滚失败，state 里可能残留资源，但用户无感知。
+// cmt: 参考 deleteM3VpcepService 抛出错误让上游函数处理即可
 func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepClient(ctx context.Context, clientId string) {
 	deleteReq := &model.DeleteEndpointRequest{
 		VpcEndpointId: clientId,
@@ -351,6 +379,7 @@ func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepClient(ctx context.Context, 
 				"client_id": clientId,
 				"error":     err.Error(),
 			})
+			// cmt: 删除失败时只记录警告，不返回错误 调用者无法知道删除是否成功
 			return
 		}
 		tflog.Info(ctx, "VPCEP-Client already deleted or not found", map[string]any{
@@ -375,6 +404,7 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 	_, err := r.m3VpcepClient.DeleteEndpointService(deleteReq)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
+			// cmt: 是不是冗余日志?返回 error 了，日志由上层函数打印即可
 			tflog.Warn(ctx, "Failed to delete VPCEP-Service", map[string]any{
 				"service_id": serviceId,
 				"error":      err.Error(),
