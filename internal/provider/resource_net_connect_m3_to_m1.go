@@ -54,7 +54,7 @@ func (r *NetConnectM3ToM1Resource) Configure(ctx context.Context, req resource.C
 
 func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.CreateRequest,
 	resp *resource.CreateResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Create called")
+	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Create called")
 	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	plan.VpcepClientId = "demo_client_id"
@@ -64,7 +64,7 @@ func (r *NetConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 }
 
 func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Read called")
+	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Read called")
 	var state netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -72,7 +72,7 @@ func (r *NetConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 
 func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Update called")
+	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Update called")
 	var plan netConnectM3ToM1Model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -80,5 +80,5 @@ func (r *NetConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 
 func (r *NetConnectM3ToM1Resource) Delete(ctx context.Context, req resource.DeleteRequest,
 	resp *resource.DeleteResponse) {
-	tflog.Info(ctx, "kkem_net_connect_m3_to_m1: Delete called")
+	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Delete called")
 }
