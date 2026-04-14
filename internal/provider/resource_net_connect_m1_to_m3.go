@@ -23,8 +23,10 @@ import (
 const resourceTypeName = "_net_connect_m1_to_m3"
 
 const (
-	vpcepClientPollingInterval = 5 * time.Second
-	vpcepClientPollingTimeout  = 5 * time.Minute
+	vpcepClientPollingInterval  = 5 * time.Second
+	vpcepClientPollingTimeout   = 5 * time.Minute
+	vpcepServicePollingInterval = 5 * time.Second
+	vpcepServicePollingTimeout  = 5 * time.Minute
 )
 
 type netConnectM1ToM3Resource struct {
@@ -123,6 +125,19 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
+
+	// Step 1.5 - 轮询等待 VPCEP-Service 状态变为 available
+	if err := r.waitForVpcepServiceReady(ctx, vpcepServiceId); err != nil {
+		// 回滚：删除已创建的 VPCEP-Service
+		if rollbackErr := r.deleteM3VpcepService(ctx, vpcepServiceId); rollbackErr != nil {
+			tflog.Warn(ctx, "rollback: failed to delete VPCEP-Service", map[string]any{
+				"service_id": vpcepServiceId,
+				"error":      rollbackErr.Error(),
+			})
+		}
+		resp.Diagnostics.AddError("wait for VPCEP service ready failed", err.Error())
+		return
+	}
 
 	// Step 2 - 配置 VPCEP-Service 白名单
 	if err := r.addVpcepServicePermission(ctx, vpcepServiceId, plan.M1PlusDomainId); err != nil {
@@ -390,6 +405,58 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 		})
 	}
 	return nil
+}
+
+// waitForVpcepServiceReady 轮询等待 VPCEP-Service 状态变为 available。
+func (r *netConnectM1ToM3Resource) waitForVpcepServiceReady(ctx context.Context, serviceId string) error {
+	timeout := time.After(vpcepServicePollingTimeout)
+	ticker := time.NewTicker(vpcepServicePollingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for VPCEP-Service %s to be ready", serviceId)
+		case <-ticker.C:
+			getReq := &model.ListServiceDetailsRequest{
+				VpcEndpointServiceId: serviceId,
+			}
+
+			getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
+			if err != nil {
+				return fmt.Errorf("query VPCEP-Service status failed: %w", err)
+			}
+
+			if getResp.Status == nil {
+				return fmt.Errorf("VPCEP-Service response has no status")
+			}
+
+			status := *getResp.Status
+			tflog.Debug(ctx, "VPCEP-Service status check", map[string]any{
+				"service_id": serviceId,
+				"status":     status,
+			})
+
+			switch status {
+			case "available":
+				tflog.Info(ctx, "VPCEP-Service is ready", map[string]any{
+					"service_id": serviceId,
+				})
+				return nil
+			case "failed":
+				return fmt.Errorf("VPCEP-Service %s status is failed", serviceId)
+			case "creating":
+				// 继续轮询
+				continue
+			default:
+				// 未知状态，继续轮询
+				tflog.Warn(ctx, "VPCEP-Service unknown status", map[string]any{
+					"service_id": serviceId,
+					"status":     status,
+				})
+			}
+		}
+	}
 }
 
 // addVpcepServicePermission 为 VPCEP-Service 添加白名单权限。
