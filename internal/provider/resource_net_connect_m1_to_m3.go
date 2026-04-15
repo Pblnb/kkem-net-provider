@@ -49,11 +49,12 @@ type netConnectM1ToM3Model struct {
 	DnsDomain           string                  `tfsdk:"dns_domain"`
 	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
 	LbmDnsServiceName   string                  `tfsdk:"lbm_dns_service_name"`
-	M3RegionCode        string                  `tfsdk:"m3_region_code"`
-	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
-	VpcepEndpointId     types.String            `tfsdk:"vpcep_endpoint_id"`
-	VpcepEndpointIp     types.String            `tfsdk:"vpcep_endpoint_ip"`
-	LbmDnsRecordId      types.String            `tfsdk:"lbm_dns_record_id"`
+	// cmt: region code 和 m3 无关，就用 RegionCode 即可
+	M3RegionCode    string       `tfsdk:"m3_region_code"`
+	VpcepServiceId  types.String `tfsdk:"vpcep_service_id"`
+	VpcepEndpointId types.String `tfsdk:"vpcep_endpoint_id"`
+	VpcepEndpointIp types.String `tfsdk:"vpcep_endpoint_ip"`
+	LbmDnsRecordId  types.String `tfsdk:"lbm_dns_record_id"`
 }
 
 type vpcepServicePortBlock struct {

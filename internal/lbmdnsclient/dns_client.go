@@ -81,7 +81,7 @@ func (c *Client) CreateLbmDnsRecord(ctx context.Context, regionCode, serviceName
 		Host:  c.endpoint,
 	}
 
-	respBytes, err := sendHTTP(attr, actionPost, pathCreateIntranetDnsDomain, bytes.NewReader(bodyBytes))
+	respBytes, err := sendHTTP(ctx, attr, actionPost, pathCreateIntranetDnsDomain, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("send create DNS record request failed: %w", err)
 	}
@@ -134,7 +134,7 @@ func (c *Client) waitForTask(ctx context.Context, taskId string) (string, error)
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
 		case <-ticker.C:
-			respBytes, err := sendHTTP(attr, actionGet, url, nil)
+			respBytes, err := sendHTTP(ctx, attr, actionGet, url, nil)
 			if err != nil {
 				return "", fmt.Errorf("query task status failed: %w", err)
 			}
