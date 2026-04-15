@@ -31,9 +31,10 @@ type kkemNetProviderModel struct {
 	M1Plus cloudCredentials `tfsdk:"m1_plus"`
 	M3     cloudCredentials `tfsdk:"m3"`
 
-	VpcepEndpoint  string `tfsdk:"vpcep_endpoint"`
-	LbmDnsEndpoint string `tfsdk:"lbm_dns_endpoint"`
-	XOpenToken     string `tfsdk:"x_open_token"`
+	VpcepEndpoint  string `tfsdk:"vpcep_endpoint"`   // M1+/M3 共用
+	LbmDnsEndpoint string `tfsdk:"lbm_dns_endpoint"` // M1→M3 lbm-dns 服务地址
+	DnsEndpoint    string `tfsdk:"dns_endpoint"`     // M3→M1 标准 DNS 服务地址
+	XOpenToken     string `tfsdk:"x_open_token"`     // lbm-dns 认证 Token
 }
 
 type clients struct {
@@ -69,7 +70,11 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 			},
 			"lbm_dns_endpoint": schema.StringAttribute{
 				Required:    true,
-				Description: "LBM-DNS 服务 Endpoint，如 https://dns.example.com",
+				Description: "LBM-DNS 服务 Endpoint（M1→M3 方向 DNS 解析），如 https://lbm-app-api.myhuaweicloud.com",
+			},
+			"dns_endpoint": schema.StringAttribute{
+				Required:    true,
+				Description: "DNS 服务 Endpoint（M3→M1 方向 A 记录），如 https://dns.cn-north-7.myhuaweicloud.com",
 			},
 			"x_open_token": schema.StringAttribute{
 				Required:    true,
@@ -189,6 +194,7 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		"m3_project_id":      data.M3.ProjectId,
 		"vpcep_endpoint":     data.VpcepEndpoint,
 		"lbm_dns_endpoint":   data.LbmDnsEndpoint,
+		"dns_endpoint":       data.DnsEndpoint,
 	})
 
 	resp.ResourceData = clients
