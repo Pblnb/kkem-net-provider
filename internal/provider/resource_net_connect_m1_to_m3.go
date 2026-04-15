@@ -18,7 +18,7 @@ import (
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 
-	"huawei.com/kkem/kkem-net-provider/internal/dnsclient"
+	"huawei.com/kkem/kkem-net-provider/internal/lbmdnsclient"
 	"huawei.com/kkem/kkem-net-provider/internal/utils"
 )
 
@@ -32,28 +32,28 @@ const (
 )
 
 type netConnectM1ToM3Resource struct {
-	m1PlusVpcepClient   *vpcep.VpcepClient
-	m3VpcepClient       *vpcep.VpcepClient
-	m3IntranetDnsClient *dnsclient.Client
+	m1PlusVpcepClient *vpcep.VpcepClient
+	m3VpcepClient     *vpcep.VpcepClient
+	m3LbmDnsClient    *lbmdnsclient.Client
 }
 
 type netConnectM1ToM3Model struct {
-	M3VpcId                string                  `tfsdk:"m3_vpc_id"`
-	M3ServerType           string                  `tfsdk:"m3_server_type"`
-	M3PortId               string                  `tfsdk:"m3_port_id"`
-	M3VpcepServicePorts    []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
-	M3VpcepServiceName     types.String            `tfsdk:"m3_vpcep_service_name"`
-	M1PlusVpcId            string                  `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId         string                  `tfsdk:"m1_plus_subnet_id"`
-	M1PlusDomainId         string                  `tfsdk:"m1_plus_domain_id"`
-	DnsDomain              string                  `tfsdk:"dns_domain"`
-	DnsDomainSuffix        string                  `tfsdk:"dns_domain_suffix"`
-	IntranetDnsServiceName string                  `tfsdk:"intranet_dns_service_name"`
-	M3RegionCode           string                  `tfsdk:"m3_region_code"`
-	VpcepServiceId         types.String            `tfsdk:"vpcep_service_id"`
-	VpcepEndpointId        types.String            `tfsdk:"vpcep_endpoint_id"`
-	VpcepEndpointIp        types.String            `tfsdk:"vpcep_endpoint_ip"`
-	DnsRecordId            types.String            `tfsdk:"dns_record_id"`
+	M3VpcId             string                  `tfsdk:"m3_vpc_id"`
+	M3ServerType        string                  `tfsdk:"m3_server_type"`
+	M3PortId            string                  `tfsdk:"m3_port_id"`
+	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
+	M3VpcepServiceName  types.String            `tfsdk:"m3_vpcep_service_name"`
+	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
+	M1PlusDomainId      string                  `tfsdk:"m1_plus_domain_id"`
+	DnsDomain           string                  `tfsdk:"dns_domain"`
+	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
+	LbmDnsServiceName   string                  `tfsdk:"lbm_dns_service_name"`
+	M3RegionCode        string                  `tfsdk:"m3_region_code"`
+	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
+	VpcepEndpointId     types.String            `tfsdk:"vpcep_endpoint_id"`
+	VpcepEndpointIp     types.String            `tfsdk:"vpcep_endpoint_ip"`
+	DnsRecordId         types.String            `tfsdk:"dns_record_id"`
 }
 
 type vpcepServicePortBlock struct {
@@ -82,18 +82,18 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 					"client_port": schema.Int32Attribute{Required: true},
 					"server_port": schema.Int32Attribute{Required: true},
 				}}},
-			"m3_vpcep_service_name":     schema.StringAttribute{Optional: true},
-			"m1_plus_vpc_id":            schema.StringAttribute{Required: true},
-			"m1_plus_subnet_id":         schema.StringAttribute{Required: true},
-			"m1_plus_domain_id":         schema.StringAttribute{Required: true},
-			"dns_domain":                schema.StringAttribute{Required: true},
-			"dns_domain_suffix":         schema.StringAttribute{Required: true},
-			"intranet_dns_service_name": schema.StringAttribute{Required: true},
-			"m3_region_code":            schema.StringAttribute{Required: true},
-			"vpcep_service_id":          schema.StringAttribute{Computed: true},
-			"vpcep_endpoint_id":         schema.StringAttribute{Computed: true},
-			"vpcep_endpoint_ip":         schema.StringAttribute{Computed: true},
-			"dns_record_id":             schema.StringAttribute{Computed: true},
+			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
+			"m1_plus_vpc_id":        schema.StringAttribute{Required: true},
+			"m1_plus_subnet_id":     schema.StringAttribute{Required: true},
+			"m1_plus_domain_id":     schema.StringAttribute{Required: true},
+			"dns_domain":            schema.StringAttribute{Required: true},
+			"dns_domain_suffix":     schema.StringAttribute{Required: true},
+			"lbm_dns_service_name":  schema.StringAttribute{Required: true},
+			"m3_region_code":        schema.StringAttribute{Required: true},
+			"vpcep_service_id":      schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_id":     schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_ip":     schema.StringAttribute{Computed: true},
+			"dns_record_id":         schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -111,7 +111,7 @@ func (r *netConnectM1ToM3Resource) Configure(ctx context.Context, req resource.C
 	}
 	r.m1PlusVpcepClient = clients.m1PlusVpcepClient
 	r.m3VpcepClient = clients.m3VpcepClient
-	r.m3IntranetDnsClient = clients.m3IntranetDnsClient
+	r.m3LbmDnsClient = clients.m3LbmDnsClient
 }
 
 func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.CreateRequest,
@@ -200,14 +200,14 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		"ip":        clientIp,
 	})
 
-	// Step 4 - 创建内网 DNS 解析记录
-	dnsRecordId, err := r.createIntranetDnsRecord(ctx, &plan, clientIp)
+	// Step 4 - 创建 lbm-dns 解析记录
+	dnsRecordId, err := r.createLbmDnsRecord(ctx, &plan, clientIp)
 	if err != nil {
-		resp.Diagnostics.AddError("create intranet DNS record failed", err.Error())
+		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
 		return
 	}
 	plan.DnsRecordId = types.StringValue(dnsRecordId)
-	tflog.Info(ctx, "Step 4 completed: intranet DNS record created", map[string]any{
+	tflog.Info(ctx, "Step 4 completed: lbm-dns record created", map[string]any{
 		"dns_record_id": dnsRecordId,
 	})
 
@@ -463,25 +463,25 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 	return nil
 }
 
-// createIntranetDnsRecord 创建内网 DNS 记录。
-func (r *netConnectM1ToM3Resource) createIntranetDnsRecord(ctx context.Context, plan *netConnectM1ToM3Model,
+// createLbmDnsRecord 创建 lbm-dns 记录。
+func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan *netConnectM1ToM3Model,
 	clientIp string) (string, error) {
-	if r.m3IntranetDnsClient == nil {
-		return "", fmt.Errorf("m3 intranet DNS client is not initialized")
+	if r.m3LbmDnsClient == nil {
+		return "", fmt.Errorf("m3 lbm-dns client is not initialized")
 	}
 
-	tflog.Debug(ctx, "Creating intranet DNS record", map[string]any{
+	tflog.Debug(ctx, "Creating lbm-dns record", map[string]any{
 		"region_code":   plan.M3RegionCode,
-		"service_name":  plan.IntranetDnsServiceName,
+		"service_name":  plan.LbmDnsServiceName,
 		"host_record":   plan.DnsDomain,
 		"domain_suffix": plan.DnsDomainSuffix,
 		"client_ip":     clientIp,
 	})
 
-	return r.m3IntranetDnsClient.CreateIntranetRecord(
+	return r.m3LbmDnsClient.CreateLbmDnsRecord(
 		ctx,
 		plan.M3RegionCode,
-		plan.IntranetDnsServiceName,
+		plan.LbmDnsServiceName,
 		plan.DnsDomain,
 		plan.DnsDomainSuffix,
 		clientIp,
@@ -633,7 +633,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	// TODO: 验证 vpcep-endpoint 是否仍存在（当VpcepEndpointId有值时）
-	// TODO: 验证内网 DNS 记录是否仍存在（当DnsRecordId有值时）
+	// TODO: 验证 lbm-dns 记录是否仍存在（当DnsRecordId有值时）
 
 	// 全部子资源均不存在时，移除整个 resource
 	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() &&
@@ -665,7 +665,7 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 	}
 
 	// 删除顺序：DNS → vpcep-endpoint → vpcep-service
-	// Step 1 - 删除内网 DNS 解析记录（TODO）
+	// Step 1 - 删除 lbm-dns 解析记录（TODO）
 	// Step 2 - 删除 M1+ 侧 vpcep-endpoint（TODO）
 	// Step 3 - 删除 M3 侧 vpcep-service
 	if !state.VpcepServiceId.IsNull() {

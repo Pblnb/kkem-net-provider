@@ -17,7 +17,7 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 
-	"huawei.com/kkem/kkem-net-provider/internal/dnsclient"
+	"huawei.com/kkem/kkem-net-provider/internal/lbmdnsclient"
 )
 
 type cloudCredentials struct {
@@ -31,16 +31,16 @@ type kkemNetProviderModel struct {
 	M1Plus cloudCredentials `tfsdk:"m1_plus"`
 	M3     cloudCredentials `tfsdk:"m3"`
 
-	VpcepEndpoint string `tfsdk:"vpcep_endpoint"`
-	DnsEndpoint   string `tfsdk:"dns_endpoint"`
-	XOpenToken    string `tfsdk:"x_open_token"`
+	VpcepEndpoint  string `tfsdk:"vpcep_endpoint"`
+	LbmDnsEndpoint string `tfsdk:"lbm_dns_endpoint"`
+	XOpenToken     string `tfsdk:"x_open_token"`
 }
 
 type clients struct {
-	m1PlusVpcepClient   *vpcep.VpcepClient
-	m3VpcepClient       *vpcep.VpcepClient
-	m3DnsClient         any               // TODO: for m3->m1 resource
-	m3IntranetDnsClient *dnsclient.Client // for m1->m3 resource intranet DNS
+	m1PlusVpcepClient *vpcep.VpcepClient
+	m3VpcepClient     *vpcep.VpcepClient
+	m3DnsClient       any                  // TODO: for m3->m1 resource
+	m3LbmDnsClient    *lbmdnsclient.Client // for m1->m3 resource lbm-dns
 }
 
 type KkemProvider struct {
@@ -67,14 +67,14 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 				Required:    true,
 				Description: "VPCEP 服务 Endpoint，如 https://vpcep.cn-north-7.myhuaweicloud.com",
 			},
-			"dns_endpoint": schema.StringAttribute{
+			"lbm_dns_endpoint": schema.StringAttribute{
 				Required:    true,
-				Description: "DNS 服务 Endpoint，如 https://dns.cn-north-7.myhuaweicloud.com",
+				Description: "LBM-DNS 服务 Endpoint，如 https://dns.example.com",
 			},
 			"x_open_token": schema.StringAttribute{
 				Required:    true,
 				Sensitive:   true,
-				Description: "内网 DNS API Token（x-open-token）",
+				Description: "lbm-dns API Token（x-open-token）",
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -175,20 +175,20 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	// 初始化内网 DNS Client（用于 m1->m3 资源）
-	m3IntranetDnsClient := dnsclient.NewClient(data.DnsEndpoint, data.XOpenToken)
+	// 初始化 lbm-dns Client（用于 m1->m3 资源）
+	m3LbmDnsClient := lbmdnsclient.NewClient(data.LbmDnsEndpoint, data.XOpenToken)
 
 	clients := &clients{
-		m1PlusVpcepClient:   m1PlusVpcepClient,
-		m3VpcepClient:       m3VpcepClient,
-		m3IntranetDnsClient: m3IntranetDnsClient,
+		m1PlusVpcepClient: m1PlusVpcepClient,
+		m3VpcepClient:     m3VpcepClient,
+		m3LbmDnsClient:    m3LbmDnsClient,
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]any{
 		"m1_plus_project_id": data.M1Plus.ProjectId,
 		"m3_project_id":      data.M3.ProjectId,
 		"vpcep_endpoint":     data.VpcepEndpoint,
-		"dns_endpoint":       data.DnsEndpoint,
+		"lbm_dns_endpoint":   data.LbmDnsEndpoint,
 	})
 
 	resp.ResourceData = clients

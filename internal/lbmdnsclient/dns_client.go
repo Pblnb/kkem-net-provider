@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package dnsclient
+package lbmdnsclient
 
 import (
 	"bytes"
@@ -22,7 +22,7 @@ const (
 	taskStatusSuccess = "success"
 )
 
-// Client 内网 DNS Client，封装 HTTP 调用与异步任务轮询
+// Client lbm-dns Client，封装 HTTP 调用与异步任务轮询
 type Client struct {
 	endpoint string
 	token    string
@@ -38,7 +38,7 @@ func NewClient(endpoint, token string) *Client {
 	}
 }
 
-// CreateIntranetRecord 创建内网 DNS 记录
+// CreateLbmDnsRecord 创建 lbm-dns 记录
 // 参数：
 //   - regionCode: 区域代码（如 cn-north-7）
 //   - serviceName: 服务名称标识
@@ -47,8 +47,8 @@ func NewClient(endpoint, token string) *Client {
 //   - ip: 记录值（VPCEP-Client IP）
 //
 // 返回：DNS 记录 ID、错误
-func (c *Client) CreateIntranetRecord(ctx context.Context, regionCode, serviceName, hostRecord, domainSuffix, ip string) (string, error) {
-	tflog.Debug(ctx, "Creating intranet DNS record", map[string]any{
+func (c *Client) CreateLbmDnsRecord(ctx context.Context, regionCode, serviceName, hostRecord, domainSuffix, ip string) (string, error) {
+	tflog.Debug(ctx, "Creating lbm-dns record", map[string]any{
 		"region_code":   regionCode,
 		"service_name":  serviceName,
 		"host_record":   hostRecord,
@@ -100,7 +100,7 @@ func (c *Client) CreateIntranetRecord(ctx context.Context, regionCode, serviceNa
 		return "", fmt.Errorf("create DNS record response has no task_id")
 	}
 
-	tflog.Info(ctx, "Intranet DNS record creation task started", map[string]any{
+	tflog.Info(ctx, "lbm-dns record creation task started", map[string]any{
 		"task_id": resp.TaskId,
 	})
 
@@ -110,7 +110,7 @@ func (c *Client) CreateIntranetRecord(ctx context.Context, regionCode, serviceNa
 		return "", fmt.Errorf("wait for DNS record creation failed: %w", err)
 	}
 
-	tflog.Info(ctx, "Intranet DNS record created", map[string]any{
+	tflog.Info(ctx, "lbm-dns record created", map[string]any{
 		"record_id": recordId,
 	})
 
