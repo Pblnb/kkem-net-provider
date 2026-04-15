@@ -5,12 +5,16 @@
 package lbmdnsclient
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -23,6 +27,7 @@ type clientAttr struct {
 	Host  string `json:"host"`
 }
 
+// cmt: 判断一下这里需不需要复用 provider 主进程中的 context
 func sendHTTP(attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, error) {
 	client := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -36,8 +41,28 @@ func sendHTTP(attr *clientAttr, method, path string, reqBody io.Reader) ([]byte,
 	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 		host = "https://" + host
 	}
+	url := host + path
 
-	req, err := http.NewRequest(method, host+path, reqBody)
+	// 读取 body 内容用于日志（需要保存一份给后续使用）
+	var bodyBytes []byte
+	if reqBody != nil {
+		if readErr := readBody(reqBody, &bodyBytes); readErr != nil {
+			return nil, fmt.Errorf("read request body failed: %w", readErr)
+		}
+		reqBody = bytes.NewReader(bodyBytes)
+	}
+
+	tflog.Debug(context.Background(), "Sending HTTP request", map[string]any{
+		"method": method,
+		"url":    url,
+		"headers": map[string]string{
+			"content-type": "application/json",
+			"x-open-token": maskToken(attr.Token),
+		},
+		"body": string(bodyBytes),
+	})
+
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP request failed: %w", err)
 	}
@@ -53,7 +78,8 @@ func sendHTTP(attr *clientAttr, method, path string, reqBody io.Reader) ([]byte,
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("received failed response, statusCode=%d", resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("received failed response, statusCode=%d, body=%s", resp.StatusCode, string(respBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -61,4 +87,20 @@ func sendHTTP(attr *clientAttr, method, path string, reqBody io.Reader) ([]byte,
 		return nil, fmt.Errorf("read response body failed: %w", err)
 	}
 	return body, nil
+}
+
+func readBody(r io.Reader, out *[]byte) error {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	*out = data
+	return nil
+}
+
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return "****"
+	}
+	return token[:4] + "****" + token[len(token)-4:]
 }
