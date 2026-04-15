@@ -53,7 +53,7 @@ type netConnectM1ToM3Model struct {
 	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
 	VpcepEndpointId     types.String            `tfsdk:"vpcep_endpoint_id"`
 	VpcepEndpointIp     types.String            `tfsdk:"vpcep_endpoint_ip"`
-	DnsRecordId         types.String            `tfsdk:"dns_record_id"`
+	LbmDnsRecordId      types.String            `tfsdk:"lbm_dns_record_id"`
 }
 
 type vpcepServicePortBlock struct {
@@ -93,7 +93,7 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"vpcep_service_id":      schema.StringAttribute{Computed: true},
 			"vpcep_endpoint_id":     schema.StringAttribute{Computed: true},
 			"vpcep_endpoint_ip":     schema.StringAttribute{Computed: true},
-			"dns_record_id":         schema.StringAttribute{Computed: true},
+			"lbm_dns_record_id":     schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -206,7 +206,7 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
 		return
 	}
-	plan.DnsRecordId = types.StringValue(dnsRecordId)
+	plan.LbmDnsRecordId = types.StringValue(dnsRecordId)
 	tflog.Info(ctx, "Step 4 completed: lbm-dns record created", map[string]any{
 		"dns_record_id": dnsRecordId,
 	})
@@ -633,11 +633,11 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	// TODO: 验证 vpcep-endpoint 是否仍存在（当VpcepEndpointId有值时）
-	// TODO: 验证 lbm-dns 记录是否仍存在（当DnsRecordId有值时）
+	// TODO: 验证 lbm-dns 记录是否仍存在（当LbmDnsRecordId有值时）
 
 	// 全部子资源均不存在时，移除整个 resource
 	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() &&
-		state.VpcepEndpointIp.IsNull() && state.DnsRecordId.IsNull()
+		state.VpcepEndpointIp.IsNull() && state.LbmDnsRecordId.IsNull()
 	if allRemoved {
 		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
