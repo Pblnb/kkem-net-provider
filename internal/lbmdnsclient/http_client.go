@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -30,7 +31,13 @@ func sendHTTP(attr *clientAttr, method, path string, reqBody io.Reader) ([]byte,
 		}},
 		Timeout: 3 * time.Minute,
 	}
-	req, err := http.NewRequest(method, attr.Host+path, reqBody)
+
+	host := attr.Host
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		host = "https://" + host
+	}
+
+	req, err := http.NewRequest(method, host+path, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP request failed: %w", err)
 	}
