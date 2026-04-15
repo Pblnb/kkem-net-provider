@@ -28,6 +28,7 @@ type clientAttr struct {
 }
 
 func sendHTTP(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, error) {
+	// cmt: 每次请求都创建新的 HTTP Client 会导致性能问题和资源浪费，建议在 Client 结构体中复用同一个 httpClient 实例。
 	client := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion:         tls.VersionTLS12,
@@ -73,8 +74,13 @@ func sendHTTP(ctx context.Context, attr *clientAttr, method, path string, reqBod
 	if err != nil {
 		return nil, fmt.Errorf("send HTTP request failed: %w", err)
 	}
-	// cmt: 这里 ide 告警有 error 没处理，评估下需不需要加上处理错误的逻辑
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			tflog.Warn(context.Background(), "failed to close response body", map[string]any{
+				"error": closeErr.Error(),
+			})
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)

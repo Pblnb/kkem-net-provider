@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	recordTypeA       = "A"
-	pollingInterval   = 3 * time.Second
-	pollingTimeout    = 2 * time.Minute
+	recordTypeA     = "A"
+	pollingInterval = 3 * time.Second
+	pollingTimeout  = 2 * time.Minute
+	// cmt: 这俩变量可以和taskStatusFailed taskStatusCancel一起放types.go里
 	taskStatusOK      = "ok"
 	taskStatusSuccess = "success"
 )
@@ -47,7 +48,8 @@ func NewClient(endpoint, token string) *Client {
 //   - ip: 记录值（VPCEP-Client IP）
 //
 // 返回：DNS 记录 ID、错误
-func (c *Client) CreateLbmDnsRecord(ctx context.Context, regionCode, serviceName, hostRecord, domainSuffix, ip string) (string, error) {
+func (c *Client) CreateLbmDnsRecord(ctx context.Context,
+	regionCode, serviceName, hostRecord, domainSuffix, ip string) (string, error) {
 	tflog.Debug(ctx, "Creating lbm-dns record", map[string]any{
 		"region_code":   regionCode,
 		"service_name":  serviceName,
@@ -92,6 +94,9 @@ func (c *Client) CreateLbmDnsRecord(ctx context.Context, regionCode, serviceName
 		return "", fmt.Errorf("unmarshal DNS response failed: %w", err)
 	}
 
+	// cmt: 此处的0逻辑不清晰，如果有特殊含义可以封装成变量: 参考文档描述
+	// status	Integer	状态码（0为成功，其他为失败）
+	// code	Integer	状态码（0为成功，其他为失败）
 	if resp.Status != 200 && resp.Status != 0 {
 		return "", fmt.Errorf("create DNS record failed: status=%d, code=%d, msg=%s", resp.Status, resp.Code, resp.Msg)
 	}
@@ -133,8 +138,10 @@ func (c *Client) waitForTask(ctx context.Context, taskId string) (string, error)
 		select {
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
+		// cmt: 缺少 ctx.Done() 检查，用户取消后，轮询不会停止；需要确认一下在 Provider 开发体系中 Context 的作用有没有这部分作用
 		case <-ticker.C:
 			respBytes, err := sendHTTP(ctx, attr, actionGet, url, nil)
+			// cmt: 如果 HTTP 请求临时失败（网络抖动、服务端限流等），会立即返回错误，不应该因为一次查询失败就放弃整个操作 应该重试几次
 			if err != nil {
 				return "", fmt.Errorf("query task status failed: %w", err)
 			}
@@ -145,7 +152,8 @@ func (c *Client) waitForTask(ctx context.Context, taskId string) (string, error)
 			}
 
 			if resp.Status != 200 && resp.Status != 0 {
-				return "", fmt.Errorf("query task status failed: status=%d, code=%d, msg=%s", resp.Status, resp.Code, resp.Msg)
+				return "", fmt.Errorf("query task status failed: status=%d, code=%d, msg=%s", resp.Status, resp.Code,
+					resp.Msg)
 			}
 
 			status := resp.Data.Status

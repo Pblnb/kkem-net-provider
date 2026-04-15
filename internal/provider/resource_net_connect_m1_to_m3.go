@@ -49,12 +49,11 @@ type netConnectM1ToM3Model struct {
 	DnsDomain           string                  `tfsdk:"dns_domain"`
 	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
 	LbmDnsServiceName   string                  `tfsdk:"lbm_dns_service_name"`
-	// cmt: region code 和 m3 无关，就用 RegionCode 即可
-	M3RegionCode    string       `tfsdk:"m3_region_code"`
-	VpcepServiceId  types.String `tfsdk:"vpcep_service_id"`
-	VpcepEndpointId types.String `tfsdk:"vpcep_endpoint_id"`
-	VpcepEndpointIp types.String `tfsdk:"vpcep_endpoint_ip"`
-	LbmDnsRecordId  types.String `tfsdk:"lbm_dns_record_id"`
+	RegionCode          string                  `tfsdk:"region_code"`
+	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
+	VpcepEndpointId     types.String            `tfsdk:"vpcep_endpoint_id"`
+	VpcepEndpointIp     types.String            `tfsdk:"vpcep_endpoint_ip"`
+	LbmDnsRecordId      types.String            `tfsdk:"lbm_dns_record_id"`
 }
 
 type vpcepServicePortBlock struct {
@@ -90,7 +89,7 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"dns_domain":            schema.StringAttribute{Required: true},
 			"dns_domain_suffix":     schema.StringAttribute{Required: true},
 			"lbm_dns_service_name":  schema.StringAttribute{Required: true},
-			"m3_region_code":        schema.StringAttribute{Required: true},
+			"region_code":           schema.StringAttribute{Required: true},
 			"vpcep_service_id":      schema.StringAttribute{Computed: true},
 			"vpcep_endpoint_id":     schema.StringAttribute{Computed: true},
 			"vpcep_endpoint_ip":     schema.StringAttribute{Computed: true},
@@ -472,7 +471,7 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 	}
 
 	tflog.Debug(ctx, "Creating lbm-dns record", map[string]any{
-		"region_code":   plan.M3RegionCode,
+		"region_code":   plan.RegionCode,
 		"service_name":  plan.LbmDnsServiceName,
 		"host_record":   plan.DnsDomain,
 		"domain_suffix": plan.DnsDomainSuffix,
@@ -481,7 +480,7 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 
 	return r.m3LbmDnsClient.CreateLbmDnsRecord(
 		ctx,
-		plan.M3RegionCode,
+		plan.RegionCode,
 		plan.LbmDnsServiceName,
 		plan.DnsDomain,
 		plan.DnsDomainSuffix,
