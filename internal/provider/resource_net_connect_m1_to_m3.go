@@ -414,7 +414,6 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 }
 
 // waitForLbmDnsRecordReady 轮询等待 lbm-dns 记录创建完成，返回 DNS 记录 ID。
-// cmt: 能否直接使用github.com/hashicorp/terraform-plugin-sdk/v2的helper/retry包实现轮询
 func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context, taskId string) (string, error) {
 	timeout := time.After(lbmDnsPollingTimeout)
 	ticker := time.NewTicker(lbmDnsPollingInterval)
@@ -533,6 +532,39 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 	})
 
 	var taskId string
+	// cmt: 调试时空指针 panic 了，报错如下：
+	//	Stack trace from the terraform-provider-kkem plugin:
+	//
+	//panic: runtime error: invalid memory address or nil pointer dereference
+	//[signal SIGSEGV: segmentation violation code=0x1 addr=0x18 pc=0xc73447]
+	//
+	//	goroutine 54 [running]:
+	//	huawei.com/kkem/kkem-net-provider/internal/provider.(*netConnectM1ToM3Resource).createLbmDnsRecord.func1()
+	//	/home/p00887554/go/src/kkem/kkem-net-provider/internal/provider/resource_net_connect_m1_to_m3.go:540 +0x167
+	//	huawei.com/kkem/kkem-net-provider/internal/utils.RetryWithBackoff({0x10a25a8, 0xc0004d5740}, 0x3, 0x3b9aca00, 0xc0002703c0)
+	//	/home/p00887554/go/src/kkem/kkem-net-provider/internal/utils/utils.go:42 +0x84
+	//	huawei.com/kkem/kkem-net-provider/internal/provider.(*netConnectM1ToM3Resource).createLbmDnsRecord(0xc00042e270, {0x10a25a8, 0xc0004d5740}, 0xc0000e4140, {0xc0002a14f0, 0xd})
+	//	/home/p00887554/go/src/kkem/kkem-net-provider/internal/provider/resource_net_connect_m1_to_m3.go:535 +0x425
+	//	huawei.com/kkem/kkem-net-provider/internal/provider.(*netConnectM1ToM3Resource).Create(0xc00042e270, {0x10a25a8, 0xc0004d5740}, {{{{0x10a7a50, 0xc0005b2540}, {0xdeff40, 0xc000413350}}, {0x10a9cf8, 0xc0003c00f0}}, {{{0x10a7a50, ...}, ...}, ...}, ...}, ...)
+	//	/home/p00887554/go/src/kkem/kkem-net-provider/internal/provider/resource_net_connect_m1_to_m3.go:207 +0xcbc
+	//	github.com/hashicorp/terraform-plugin-framework/internal/fwserver.(*Server).CreateResource(0xc0002d8008, {0x10a25a8, 0xc0004d5740}, 0xc0002714c0, 0xc000271490)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/github.com/hashicorp/terraform-plugin-framework@v1.17.0/internal/fwserver/server_createresource.go:127 +0x88e
+	//	github.com/hashicorp/terraform-plugin-framework/internal/fwserver.(*Server).ApplyResourceChange(0xc0002d8008, {0x10a25a8, 0xc0004d5740}, 0xc00021c0e0, 0xc0002715e8)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/github.com/hashicorp/terraform-plugin-framework@v1.17.0/internal/fwserver/server_applyresourcechange.go:63 +0x586
+	//	github.com/hashicorp/terraform-plugin-framework/internal/proto6server.(*Server).ApplyResourceChange(0xc0002d8008, {0x10a25a8?, 0xc0004d5650?}, 0xc0004a6410)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/github.com/hashicorp/terraform-plugin-framework@v1.17.0/internal/proto6server/server_applyresourcechange.go:71 +0x585
+	//	github.com/hashicorp/terraform-plugin-go/tfprotov6/tf6server.(*server).ApplyResourceChange(0xc0002da000, {0x10a25a8?, 0xc0004d4240?}, 0xc000598180)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/github.com/hashicorp/terraform-plugin-go@v0.29.0/tfprotov6/tf6server/server.go:944 +0x3b9
+	//	github.com/hashicorp/terraform-plugin-go/tfprotov6/internal/tfplugin6._Provider_ApplyResourceChange_Handler({0xf08e80, 0xc0002da000}, {0x10a25a8, 0xc0004d4240}, 0xc000598100, 0x0)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/github.com/hashicorp/terraform-plugin-go@v0.29.0/tfprotov6/internal/tfplugin6/tfplugin6_grpc.pb.go:789 +0x1a6
+	//	google.golang.org/grpc.(*Server).processUnaryRPC(0xc0002cc000, {0x10a25a8, 0xc0004d41b0}, 0xc0002800c0, 0xc000286cf0, 0x17b2c28, 0x0)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/google.golang.org/grpc@v1.75.1/server.go:1431 +0x1036
+	//	google.golang.org/grpc.(*Server).handleStream(0xc0002cc000, {0x10a2f68, 0xc00047c000}, 0xc0002800c0)
+	//	/mnt/c/Users/p00887554/go/pkg/mod/google.golang.org/grpc@v1.75.1/server.go:1842 +0xb88
+	//	google.golang.org/grpc.(*Server).serveStreams.func2.1()
+	//	/mnt/c/Users/p00887554/go/pkg/mod/google.golang.org/grpc@v1.75.1/server.go:1061 +0x7f
+	//	created by google.golang.org/grpc.(*Server).serveStreams.func2 in goroutine 52
+	//	/mnt/c/Users/p00887554/go/pkg/mod/google.golang.org/grpc@v1.75.1/server.go:1072 +0x11d
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		resp, httpStatus, innerErr := r.m3LbmDnsClient.CreateLbmDnsRecord(ctx, plan.RegionCode, plan.LbmDnsServiceName,
 			plan.DnsDomain, plan.DnsDomainSuffix, clientIp)
