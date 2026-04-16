@@ -10,14 +10,18 @@ const (
 )
 
 const (
-	taskStatusFailed = "failed"
-	taskStatusCancel = "cancel"
+	statusCodeSuccess = 0
+)
+
+const (
+	taskStatusSuccess = "success"
+	taskStatusFailed  = "failed"
 )
 
 type baseResponse struct {
 	Status       int    `json:"status"`
 	Code         int    `json:"code"`
-	Msg          string `json:"msg"`
+	ErrMsg       string `json:"msg"`
 	ProviderCode string `json:"provider_code"`
 }
 
@@ -32,9 +36,9 @@ type domainTaskStatusResponse struct {
 }
 
 type domainStatus struct {
-	ResourceId   string `json:"resourceId,omitempty"`
-	Status       string `json:"status,omitempty"`
-	ErrorMessage string `json:"msg,omitempty"`
+	ResourceId string `json:"resourceId,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Message    string `json:"msg,omitempty"`
 }
 
 type intranetDnsDomainResource struct {

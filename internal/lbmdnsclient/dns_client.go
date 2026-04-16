@@ -18,36 +18,9 @@ const (
 	recordTypeA     = "A"
 	pollingInterval = 3 * time.Second
 	pollingTimeout  = 2 * time.Minute
-	// cmt: 这俩变量可以和taskStatusFailed taskStatusCancel一起放types.go里
-	taskStatusOK      = "ok"
-	taskStatusSuccess = "success"
 )
 
-// Client lbm-dns Client，封装 HTTP 调用与异步任务轮询
-type Client struct {
-	endpoint string
-	token    string
-}
-
-// NewClient 创建 DNS Client
-// endpoint: DNS 服务地址（如 https://dns.example.com）
-// token: x-open-token 认证令牌
-func NewClient(endpoint, token string) *Client {
-	return &Client{
-		endpoint: endpoint,
-		token:    token,
-	}
-}
-
 // CreateLbmDnsRecord 创建 lbm-dns 记录
-// 参数：
-//   - regionCode: 区域代码（如 cn-north-7）
-//   - serviceName: 服务名称标识
-//   - hostRecord: 主机记录（域名前缀）
-//   - domainSuffix: 域名后缀
-//   - ip: 记录值（VPCEP-Client IP）
-//
-// 返回：DNS 记录 ID、错误
 func (c *Client) CreateLbmDnsRecord(ctx context.Context,
 	regionCode, serviceName, hostRecord, domainSuffix, ip string) (string, error) {
 	tflog.Debug(ctx, "Creating lbm-dns record", map[string]any{
@@ -58,7 +31,6 @@ func (c *Client) CreateLbmDnsRecord(ctx context.Context,
 		"ip":            ip,
 	})
 
-	// 构造请求体
 	reqBody := &intranetDnsDomainResource{
 		RegionCode:   regionCode,
 		ServiceName:  serviceName,
@@ -77,28 +49,34 @@ func (c *Client) CreateLbmDnsRecord(ctx context.Context,
 		return "", fmt.Errorf("marshal DNS request failed: %w", err)
 	}
 
-	// 发送创建请求
 	attr := &clientAttr{
 		Token: c.token,
 		Host:  c.endpoint,
 	}
 
-	respBytes, err := sendHTTP(ctx, attr, actionPost, pathCreateIntranetDnsDomain, bytes.NewReader(bodyBytes))
+	respBytes, statusCode, err := c.doRequest(ctx, attr, actionPost, pathCreateIntranetDnsDomain,
+		bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("send create DNS record request failed: %w", err)
 	}
 
-	// 解析响应获取 TaskId
+	// HTTP 状态码非 2XX 视为失败
+	if statusCode < 200 || statusCode >= 300 {
+		return "", fmt.Errorf("create DNS record failed: httpStatusCode=%d, body=%s", statusCode, string(respBytes))
+	}
+
 	var resp domainChangeResponse
 	if err := json.Unmarshal(respBytes, &resp); err != nil {
+		tflog.Warn(ctx, "unmarshal DNS response failed, raw body", map[string]any{
+			"body": string(respBytes),
+		})
 		return "", fmt.Errorf("unmarshal DNS response failed: %w", err)
 	}
 
-	// cmt: 此处的0逻辑不清晰，如果有特殊含义可以封装成变量: 参考文档描述
-	// status	Integer	状态码（0为成功，其他为失败）
-	// code	Integer	状态码（0为成功，其他为失败）
-	if resp.Status != 200 && resp.Status != 0 {
-		return "", fmt.Errorf("create DNS record failed: status=%d, code=%d, msg=%s", resp.Status, resp.Code, resp.Msg)
+	// 业务状态码判断：只有 status=0 表示成功
+	if resp.Status != statusCodeSuccess {
+		return "", fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code,
+			resp.ErrMsg)
 	}
 
 	if resp.TaskId == "" {
@@ -109,7 +87,6 @@ func (c *Client) CreateLbmDnsRecord(ctx context.Context,
 		"task_id": resp.TaskId,
 	})
 
-	// 轮询等待任务完成
 	recordId, err := c.waitForTask(ctx, resp.TaskId)
 	if err != nil {
 		return "", fmt.Errorf("wait for DNS record creation failed: %w", err)
@@ -136,24 +113,36 @@ func (c *Client) waitForTask(ctx context.Context, taskId string) (string, error)
 
 	for {
 		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("context cancelled while waiting for DNS record: %s", ctx.Err())
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
-		// cmt: 缺少 ctx.Done() 检查，用户取消后，轮询不会停止；需要确认一下在 Provider 开发体系中 Context 的作用有没有这部分作用
 		case <-ticker.C:
-			respBytes, err := sendHTTP(ctx, attr, actionGet, url, nil)
+			respBytes, statusCode, err := c.doRequest(ctx, attr, actionGet, url, nil)
 			// cmt: 如果 HTTP 请求临时失败（网络抖动、服务端限流等），会立即返回错误，不应该因为一次查询失败就放弃整个操作 应该重试几次
+			// 我的建议： 这里只需要 continue 是不是就 OK 了？
 			if err != nil {
 				return "", fmt.Errorf("query task status failed: %w", err)
 			}
 
+			// HTTP 状态码非 2XX 也视为失败
+			if statusCode < 200 || statusCode >= 300 {
+				return "", fmt.Errorf("query task status failed: httpStatusCode=%d, body=%s", statusCode,
+					string(respBytes))
+			}
+
 			var resp domainTaskStatusResponse
 			if err := json.Unmarshal(respBytes, &resp); err != nil {
+				tflog.Warn(ctx, "unmarshal task status response failed, raw body", map[string]any{
+					"body": string(respBytes),
+				})
 				return "", fmt.Errorf("unmarshal task status response failed: %w", err)
 			}
 
-			if resp.Status != 200 && resp.Status != 0 {
-				return "", fmt.Errorf("query task status failed: status=%d, code=%d, msg=%s", resp.Status, resp.Code,
-					resp.Msg)
+			// 业务状态码判断：status=0 表示成功
+			if resp.Status != statusCodeSuccess {
+				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code,
+					resp.ErrMsg)
 			}
 
 			status := resp.Data.Status
@@ -163,17 +152,14 @@ func (c *Client) waitForTask(ctx context.Context, taskId string) (string, error)
 			})
 
 			switch status {
-			case taskStatusOK, taskStatusSuccess:
+			case taskStatusSuccess:
 				if resp.Data.ResourceId == "" {
 					return "", fmt.Errorf("task completed but no resource_id returned")
 				}
 				return resp.Data.ResourceId, nil
 			case taskStatusFailed:
-				return "", fmt.Errorf("dns record creation task failed: %s", resp.Data.ErrorMessage)
-			case taskStatusCancel:
-				return "", fmt.Errorf("dns record creation task was cancelled")
+				return "", fmt.Errorf("dns record creation task failed: %s", resp.Data.Message)
 			default:
-				// 继续轮询
 				continue
 			}
 		}

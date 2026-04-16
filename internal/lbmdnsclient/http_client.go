@@ -5,7 +5,6 @@
 package lbmdnsclient
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -27,29 +26,37 @@ type clientAttr struct {
 	Host  string `json:"host"`
 }
 
-func sendHTTP(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, error) {
-	// cmt: 每次请求都创建新的 HTTP Client 会导致性能问题和资源浪费，建议在 Client 结构体中复用同一个 httpClient 实例。
-	client := &http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true,
-		}},
-		Timeout: 3 * time.Minute,
-	}
+// Client lbm-dns 客户端，封装 HTTP 调用与异步任务轮询
+type Client struct {
+	endpoint   string
+	token      string
+	httpClient *http.Client
+}
 
+// NewClient 创建 LBM DNS Client
+// endpoint: LBM DNS 服务地址（如 https://lbm-app-api.myhuaweicloud.com）
+// token: x-open-token 认证令牌
+func NewClient(endpoint, token string) *Client {
+	return &Client{
+		endpoint: endpoint,
+		token:    token,
+		httpClient: &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion:         tls.VersionTLS12,
+				InsecureSkipVerify: true,
+			}},
+			Timeout: 3 * time.Minute,
+		},
+	}
+}
+
+// doRequest 发起 HTTP 请求，返回响应 body 和 HTTP 状态码
+func (c *Client) doRequest(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, int, error) {
 	host := attr.Host
 	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 		host = "https://" + host
 	}
 	url := host + path
-
-	var bodyBytes []byte
-	if reqBody != nil {
-		if readErr := readBody(reqBody, &bodyBytes); readErr != nil {
-			return nil, fmt.Errorf("read request body failed: %w", readErr)
-		}
-		reqBody = bytes.NewReader(bodyBytes)
-	}
 
 	tflog.Debug(ctx, "Sending HTTP request", map[string]any{
 		"method": method,
@@ -58,49 +65,34 @@ func sendHTTP(ctx context.Context, attr *clientAttr, method, path string, reqBod
 			"content-type": "application/json",
 			"x-open-token": maskToken(attr.Token),
 		},
-		"body": string(bodyBytes),
 	})
 
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("create HTTP request failed: %w", err)
+		return nil, 0, fmt.Errorf("create HTTP request failed: %w", err)
 	}
 	if len(attr.Token) > 0 {
 		req.Header.Set("x-open-token", attr.Token)
 	}
 	req.Header.Add("content-type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("send HTTP request failed: %w", err)
+		return nil, 0, fmt.Errorf("send HTTP request failed: %w", err)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			tflog.Warn(context.Background(), "failed to close response body", map[string]any{
+			tflog.Warn(ctx, "failed to close response body", map[string]any{
 				"error": closeErr.Error(),
 			})
 		}
 	}()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("received failed response, statusCode=%d, body=%s", resp.StatusCode, string(respBody))
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response body failed: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("read response body failed: %w", err)
 	}
-	return body, nil
-}
-
-func readBody(r io.Reader, out *[]byte) error {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	*out = data
-	return nil
+	return body, resp.StatusCode, nil
 }
 
 func maskToken(token string) string {
