@@ -10,9 +10,9 @@ const (
 )
 
 const (
-	StatusCodeSuccess  = 0
-	TaskStatusSuccess  = "success"
-	TaskStatusFailed   = "failed"
+	StatusCodeSuccess = 0
+	TaskStatusSuccess = "success"
+	TaskStatusFailed  = "failed"
 )
 
 type baseResponse struct {

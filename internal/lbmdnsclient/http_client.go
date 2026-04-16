@@ -51,7 +51,9 @@ func NewClient(endpoint, token string) *Client {
 }
 
 // doRequest 发起 HTTP 请求，返回响应 body 和 HTTP 状态码
-func (c *Client) doRequest(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, int, error) {
+// cmt: 传入的ctx参数在函数里仅被用来打日志了，在发起请求的时候没用到这个ctx，下面的http.NewRequest建议改成http.NewRequestWithContext
+func (c *Client) doRequest(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, int,
+	error) {
 	host := attr.Host
 	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 		host = "https://" + host
