@@ -29,6 +29,9 @@ const (
 	vpcepEndpointPollingTimeout  = 5 * time.Minute
 	vpcepServicePollingInterval  = 5 * time.Second
 	vpcepServicePollingTimeout   = 5 * time.Minute
+
+	lbmDnsPollingInterval = 3 * time.Second
+	lbmDnsPollingTimeout  = 2 * time.Minute
 )
 
 type netConnectM1ToM3Resource struct {
@@ -200,14 +203,21 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		"ip":        clientIp,
 	})
 
-	// Step 4 - 创建 lbm-dns 解析记录
-	dnsRecordId, err := r.createLbmDnsRecord(ctx, &plan, clientIp)
+	// Step 4.1 - 创建 lbm-dns 解析记录
+	taskId, err := r.createLbmDnsRecord(ctx, &plan, clientIp)
 	if err != nil {
 		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
 		return
 	}
+
+	// Step 4.2 - 轮询等待 lbm-dns 记录就绪
+	dnsRecordId, err := r.waitForLbmDnsRecordReady(ctx, taskId)
+	if err != nil {
+		resp.Diagnostics.AddError("wait for lbm-dns record ready failed", err.Error())
+		return
+	}
 	plan.LbmDnsRecordId = types.StringValue(dnsRecordId)
-	tflog.Info(ctx, "Step 4 completed: lbm-dns record created", map[string]any{
+	tflog.Info(ctx, "Step 4.2 completed: lbm-dns record created", map[string]any{
 		"dns_record_id": dnsRecordId,
 	})
 
@@ -403,6 +413,50 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 	}
 }
 
+// waitForLbmDnsRecordReady 轮询等待 lbm-dns 记录创建完成，返回 DNS 记录 ID。
+func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context, taskId string) (string, error) {
+	timeout := time.After(lbmDnsPollingTimeout)
+	ticker := time.NewTicker(lbmDnsPollingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("context cancelled while waiting for DNS record: %s", ctx.Err())
+		case <-timeout:
+			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
+		case <-ticker.C:
+			resp, httpStatus, err := r.m3LbmDnsClient.GetLbmDnsTaskStatus(ctx, taskId)
+			if err != nil {
+				tflog.Warn(ctx, "query lbm-dns task status failed, retrying", map[string]any{"task_id": taskId, "error": err.Error()})
+				continue
+			}
+			if httpStatus < 200 || httpStatus >= 300 {
+				tflog.Warn(ctx, "query lbm-dns task status failed, retrying", map[string]any{"task_id": taskId, "http_status": httpStatus})
+				continue
+			}
+			if resp.Status != lbmdnsclient.StatusCodeSuccess || resp.Code != lbmdnsclient.StatusCodeSuccess {
+				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code, resp.ErrMsg)
+			}
+
+			status := resp.Data.Status
+			tflog.Debug(ctx, "DNS record creation task status check", map[string]any{"task_id": taskId, "status": status})
+
+			switch status {
+			case lbmdnsclient.TaskStatusSuccess:
+				if resp.Data.ResourceId == "" {
+					return "", fmt.Errorf("task completed but no resource_id returned")
+				}
+				return resp.Data.ResourceId, nil
+			case lbmdnsclient.TaskStatusFailed:
+				return "", fmt.Errorf("dns record creation task failed: %s", resp.Data.Message)
+			default:
+				continue
+			}
+		}
+	}
+}
+
 func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepEndpoint(ctx context.Context, clientId string) error {
 	deleteReq := &model.DeleteEndpointRequest{
 		VpcEndpointId: clientId,
@@ -463,7 +517,7 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 	return nil
 }
 
-// createLbmDnsRecord 创建 lbm-dns 记录。
+// createLbmDnsRecord 创建 lbm-dns 记录，返回 taskId。
 func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan *netConnectM1ToM3Model,
 	clientIp string) (string, error) {
 	if r.m3LbmDnsClient == nil {
@@ -478,14 +532,31 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 		"client_ip":     clientIp,
 	})
 
-	return r.m3LbmDnsClient.CreateLbmDnsRecord(
-		ctx,
-		plan.RegionCode,
-		plan.LbmDnsServiceName,
-		plan.DnsDomain,
-		plan.DnsDomainSuffix,
-		clientIp,
-	)
+	var taskId string
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		resp, httpStatus, innerErr := r.m3LbmDnsClient.CreateLbmDnsRecord(ctx, plan.RegionCode, plan.LbmDnsServiceName, plan.DnsDomain, plan.DnsDomainSuffix, clientIp)
+		if innerErr != nil {
+			tflog.Warn(ctx, "CreateLbmDnsRecord API failed, retrying", map[string]any{"error": innerErr.Error()})
+			return innerErr
+		}
+		if httpStatus < 200 || httpStatus >= 300 {
+			return fmt.Errorf("create DNS record failed: httpStatusCode=%d", httpStatus)
+		}
+		if resp.Status != lbmdnsclient.StatusCodeSuccess || resp.Code != lbmdnsclient.StatusCodeSuccess {
+			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code, resp.ErrMsg)
+		}
+		if resp.TaskId == "" {
+			return fmt.Errorf("create DNS record response has no task_id")
+		}
+		taskId = resp.TaskId
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("create DNS record failed after retries: %w", err)
+	}
+
+	tflog.Info(ctx, "lbm-dns record creation task started", map[string]any{"task_id": taskId})
+	return taskId, nil
 }
 
 // rollbackCreate 根据 plan 中已创建的资源执行回滚清理。
