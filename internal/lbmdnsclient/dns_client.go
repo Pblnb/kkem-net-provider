@@ -16,6 +16,9 @@ const (
 )
 
 // CreateLbmDnsRecord 发送创建 lbm-dns 记录的 HTTP 请求。
+// cmt: [建议] 有一种代码坏味道叫做“基本类型偏执”，从这个函数的返回值是看不出来int是要返回什么，只猜是StatusCode。
+// go有没有类型别名？或者go的http库中，有没有对StatusCode的封装类型？
+// 我的理解：这里是不是可以用命名返回值解决？还是说用类型别名解决？
 func (c *Client) CreateLbmDnsRecord(ctx context.Context,
 	regionCode, serviceName, hostRecord, domainSuffix, ip string) (*domainChangeResponse, int, error) {
 	reqBody := &intranetDnsDomainResource{
