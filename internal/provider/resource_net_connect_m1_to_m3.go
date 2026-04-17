@@ -456,22 +456,14 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 			errCount = 0
 
 			if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
-				errCount++
-				if errCount >= pollingErrTolerance {
-					return "", fmt.Errorf("query lbm-dns task status failed (http %d)", resp.HTTPStatusCode)
-				}
-				tflog.Warn(ctx, "query lbm-dns task status failed (http error), will retry", map[string]any{
-					"task_id":     taskId,
-					"http_status": resp.HTTPStatusCode,
-					"err_count":   errCount,
-				})
-				continue
+				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying",
+					map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode, "response_body": resp.Body})
+				return "", fmt.Errorf("query lbm-dns task status failed, http status is %d", resp.HTTPStatusCode)
 			}
 
 			if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
 				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
-					resp.Body.Code,
-					resp.Body.ErrMsg)
+					resp.Body.Code, resp.Body.ErrMsg)
 			}
 
 			status := resp.Body.Data.Status
@@ -581,8 +573,7 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 		}
 		if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
 			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
-				resp.Body.Code,
-				resp.Body.ErrMsg)
+				resp.Body.Code, resp.Body.ErrMsg)
 		}
 		if resp.Body.TaskId == "" {
 			return fmt.Errorf("create DNS record response has no task_id")

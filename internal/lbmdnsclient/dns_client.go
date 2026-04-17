@@ -36,13 +36,7 @@ func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
 		return nil, fmt.Errorf("marshal DNS request failed: %w", marshalErr)
 	}
 
-	attr := &clientAttr{
-		Token: c.token,
-		Host:  c.endpoint,
-	}
-
-	respBytes, statusCode, doErr := c.doRequest(ctx, attr, actionPost, pathCreateIntranetDnsDomain,
-		bytes.NewReader(bodyBytes))
+	respBytes, statusCode, doErr := c.doRequest(ctx, actionPost, pathCreateIntranetDnsDomain, bytes.NewReader(bodyBytes))
 	if doErr != nil {
 		return nil, fmt.Errorf("send create DNS record request failed: %w", doErr)
 	}
@@ -58,12 +52,8 @@ func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
 // GetIntranetDnsDomainTaskStatus 查询 lbm-dns 任务状态。
 func (c *Client) GetIntranetDnsDomainTaskStatus(ctx context.Context, taskId string) (*GetIntranetDnsDomainTaskStatusResponse, error) {
 	url := fmt.Sprintf(pathGetIntranetDnsDomainTaskStatus, taskId)
-	attr := &clientAttr{
-		Token: c.token,
-		Host:  c.endpoint,
-	}
 
-	respBytes, statusCode, doErr := c.doRequest(ctx, attr, actionGet, url, nil)
+	respBytes, statusCode, doErr := c.doRequest(ctx, actionGet, url, nil)
 	if doErr != nil {
 		return nil, fmt.Errorf("query task status failed: %w", doErr)
 	}

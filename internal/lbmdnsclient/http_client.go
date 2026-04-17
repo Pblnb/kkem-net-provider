@@ -21,11 +21,6 @@ const (
 	actionGet  = "GET"
 )
 
-type clientAttr struct {
-	Token string `json:"token"`
-	Host  string `json:"host"`
-}
-
 // Client lbm-dns 客户端，封装 HTTP 调用与异步任务轮询
 type Client struct {
 	endpoint   string
@@ -37,6 +32,10 @@ type Client struct {
 // endpoint: LBM DNS 服务地址（如 https://lbm-app-api.myhuaweicloud.com）
 // token: x-open-token 认证令牌
 func NewClient(endpoint, token string) *Client {
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		endpoint = "https://" + endpoint
+	}
+
 	return &Client{
 		endpoint: endpoint,
 		token:    token,
@@ -51,20 +50,16 @@ func NewClient(endpoint, token string) *Client {
 }
 
 // doRequest 发起 HTTP 请求，返回响应 body 和 HTTP 状态码
-func (c *Client) doRequest(ctx context.Context, attr *clientAttr, method, path string, reqBody io.Reader) ([]byte, int,
+func (c *Client) doRequest(ctx context.Context, method, path string, reqBody io.Reader) ([]byte, int,
 	error) {
-	host := attr.Host
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-		host = "https://" + host
-	}
-	url := host + path
+	url := c.endpoint + path
 
 	tflog.Debug(ctx, "Sending HTTP request", map[string]any{
 		"method": method,
 		"url":    url,
 		"headers": map[string]string{
 			"content-type": "application/json",
-			"x-open-token": maskToken(attr.Token),
+			"x-open-token": maskToken(c.token),
 		},
 	})
 
@@ -72,8 +67,8 @@ func (c *Client) doRequest(ctx context.Context, attr *clientAttr, method, path s
 	if err != nil {
 		return nil, 0, fmt.Errorf("create HTTP request failed: %w", err)
 	}
-	if len(attr.Token) > 0 {
-		req.Header.Set("x-open-token", attr.Token)
+	if len(c.token) > 0 {
+		req.Header.Set("x-open-token", c.token)
 	}
 	req.Header.Add("content-type", "application/json")
 
