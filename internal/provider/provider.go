@@ -34,7 +34,11 @@ type kkemNetProviderModel struct {
 	VpcepEndpoint  string `tfsdk:"vpcep_endpoint"`   // M1+/M3 共用
 	LbmDnsEndpoint string `tfsdk:"lbm_dns_endpoint"` // M1→M3 lbm-dns 服务地址
 	DnsEndpoint    string `tfsdk:"dns_endpoint"`     // M3→M1 标准 DNS 服务地址
-	XOpenToken     string `tfsdk:"x_open_token"`     // lbm-dns 认证 Token
+
+	// lbm-dns 认证 Token，接入 RF 后该参数由 Cube 传入，流水线用户不感知该参数
+	// TODO： 这部分参考 LBM 实现，后续接入 RF 后需要关注流水线传参是否有效
+	// 兜底策略：依赖 Cube\Fuxi 的隐私参数能力，用户使用流水线时传入
+	XOpenToken string `tfsdk:"x_open_token"`
 }
 
 type clients struct {

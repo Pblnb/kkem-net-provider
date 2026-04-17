@@ -371,6 +371,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 			}
 
 			getResp, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
+			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
 				return "", fmt.Errorf("query vpcep-endpoint status failed: %w", err)
 			}
@@ -426,17 +427,21 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
 		case <-ticker.C:
-			resp, err := r.m3LbmDnsClient.GetLbmDnsTaskStatus(ctx, taskId)
+			resp, err := r.m3LbmDnsClient.GetIntranetDnsDomainTaskStatus(ctx, taskId)
+			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
-				tflog.Warn(ctx, "query lbm-dns task status failed (network error), retrying", map[string]any{"task_id": taskId, "error": err.Error()})
+				tflog.Warn(ctx, "query lbm-dns task status failed (network error), retrying",
+					map[string]any{"task_id": taskId, "error": err.Error()})
 				continue
 			}
 			if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
-				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying", map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode})
+				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying",
+					map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode})
 				continue
 			}
 			if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
-				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status, resp.Body.Code,
+				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
+					resp.Body.Code,
 					resp.Body.ErrMsg)
 			}
 
@@ -536,17 +541,18 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 
 	var taskId string
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
-		resp, innerErr := r.m3LbmDnsClient.CreateLbmDnsRecord(ctx, plan.RegionCode, plan.LbmDnsServiceName,
+		resp, innerErr := r.m3LbmDnsClient.CreateIntranetDnsDomain(ctx, plan.RegionCode, plan.LbmDnsServiceName,
 			plan.DnsDomain, plan.DnsDomainSuffix, clientIp)
 		if innerErr != nil {
-			tflog.Warn(ctx, "CreateLbmDnsRecord API failed, retrying", map[string]any{"error": innerErr.Error()})
+			tflog.Warn(ctx, "CreateIntranetDnsDomain API failed, retrying", map[string]any{"error": innerErr.Error()})
 			return innerErr
 		}
 		if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
 			return fmt.Errorf("create DNS record failed: httpStatusCode=%d", resp.HTTPStatusCode)
 		}
 		if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
-			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Body.Status, resp.Body.Code,
+			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
+				resp.Body.Code,
 				resp.Body.ErrMsg)
 		}
 		if resp.Body.TaskId == "" {
@@ -601,6 +607,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepServiceReady(ctx context.Context,
 			}
 
 			getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
+			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
 				return fmt.Errorf("query vpcep-service status failed: %w", err)
 			}

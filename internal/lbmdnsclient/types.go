@@ -22,23 +22,27 @@ type baseResponse struct {
 	ProviderCode string `json:"provider_code"`
 }
 
-type domainChangeResponseBody struct {
+// CreateIntranetDnsDomainResponseBody 创建域名记录的响应体。
+type CreateIntranetDnsDomainResponseBody struct {
 	baseResponse
 	TaskId string `json:"data,omitempty"`
 }
 
-type domainChangeResponse struct {
-	Body           domainChangeResponseBody
+// CreateIntranetDnsDomainResponse 创建域名记录响应，包含响应体和 HTTP 状态码。
+type CreateIntranetDnsDomainResponse struct {
+	Body           CreateIntranetDnsDomainResponseBody
 	HTTPStatusCode int
 }
 
-type domainTaskStatusResponseBody struct {
+// GetIntranetDnsDomainTaskStatusResponseBody 查询任务状态的响应体。
+type GetIntranetDnsDomainTaskStatusResponseBody struct {
 	baseResponse
-	Data domainStatus `json:"data,omitempty"`
+	Data domainStatus `json:"data"`
 }
 
-type domainTaskStatusResponse struct {
-	Body           domainTaskStatusResponseBody
+// GetIntranetDnsDomainTaskStatusResponse 查询任务状态响应，包含响应体和 HTTP 状态码。
+type GetIntranetDnsDomainTaskStatusResponse struct {
+	Body           GetIntranetDnsDomainTaskStatusResponseBody
 	HTTPStatusCode int
 }
 
