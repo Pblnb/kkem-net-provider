@@ -32,6 +32,8 @@ const (
 
 	lbmDnsPollingInterval = 3 * time.Second
 	lbmDnsPollingTimeout  = 2 * time.Minute
+
+	pollingErrTolerance = 3
 )
 
 type netConnectM1ToM3Resource struct {
@@ -359,6 +361,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 	ticker := time.NewTicker(vpcepEndpointPollingInterval)
 	defer ticker.Stop()
 
+	errCount := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -371,10 +374,19 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 			}
 
 			getResp, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
-			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
-				return "", fmt.Errorf("query vpcep-endpoint status failed: %w", err)
+				errCount++
+				if errCount >= pollingErrTolerance {
+					return "", fmt.Errorf("query vpcep-endpoint status failed: %w", err)
+				}
+				tflog.Warn(ctx, "query vpcep-endpoint failed, will retry", map[string]any{
+					"client_id": clientId,
+					"error":     err.Error(),
+					"err_count": errCount,
+				})
+				continue
 			}
+			errCount = 0
 
 			if getResp.Status == nil {
 				return "", fmt.Errorf("vpcep-endpoint response has no status")
@@ -420,6 +432,7 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 	ticker := time.NewTicker(lbmDnsPollingInterval)
 	defer ticker.Stop()
 
+	errCount := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -428,17 +441,33 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
 		case <-ticker.C:
 			resp, err := r.m3LbmDnsClient.GetIntranetDnsDomainTaskStatus(ctx, taskId)
-			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
-				tflog.Warn(ctx, "query lbm-dns task status failed (network error), retrying",
-					map[string]any{"task_id": taskId, "error": err.Error()})
+				errCount++
+				if errCount >= pollingErrTolerance {
+					return "", fmt.Errorf("query lbm-dns task status failed: %w", err)
+				}
+				tflog.Warn(ctx, "query lbm-dns task failed, will retry", map[string]any{
+					"task_id":   taskId,
+					"error":     err.Error(),
+					"err_count": errCount,
+				})
 				continue
 			}
+			errCount = 0
+
 			if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
-				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying",
-					map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode})
+				errCount++
+				if errCount >= pollingErrTolerance {
+					return "", fmt.Errorf("query lbm-dns task status failed (http %d)", resp.HTTPStatusCode)
+				}
+				tflog.Warn(ctx, "query lbm-dns task status failed (http error), will retry", map[string]any{
+					"task_id":     taskId,
+					"http_status": resp.HTTPStatusCode,
+					"err_count":   errCount,
+				})
 				continue
 			}
+
 			if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
 				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
 					resp.Body.Code,
@@ -597,6 +626,7 @@ func (r *netConnectM1ToM3Resource) waitForVpcepServiceReady(ctx context.Context,
 	ticker := time.NewTicker(vpcepServicePollingInterval)
 	defer ticker.Stop()
 
+	errCount := 0
 	for {
 		select {
 		case <-timeout:
@@ -607,10 +637,19 @@ func (r *netConnectM1ToM3Resource) waitForVpcepServiceReady(ctx context.Context,
 			}
 
 			getResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
-			// cmt: 这里如果由于网络错误导致 error，那么直接会让 Create 逻辑失败。wait 方法是不是统一发请求的时候使用重试机制，若重试后仍然失败，则直接 return error
 			if err != nil {
-				return fmt.Errorf("query vpcep-service status failed: %w", err)
+				errCount++
+				if errCount >= pollingErrTolerance {
+					return fmt.Errorf("query vpcep-service status failed: %w", err)
+				}
+				tflog.Warn(ctx, "query vpcep-service failed, will retry", map[string]any{
+					"service_id": serviceId,
+					"error":      err.Error(),
+					"err_count":  errCount,
+				})
+				continue
 			}
+			errCount = 0
 
 			if getResp.Status == nil {
 				return fmt.Errorf("vpcep-service response has no status")
