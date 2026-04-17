@@ -7,12 +7,14 @@ package lbmdnsclient
 const (
 	pathCreateIntranetDnsDomain        = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet`
 	pathGetIntranetDnsDomainTaskStatus = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/result/%s`
+	pathGetIntranetDnsDomain           = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/%s`
 )
 
 const (
-	StatusCodeSuccess = 0
-	TaskStatusSuccess = "success"
-	TaskStatusFailed  = "failed"
+	StatusCodeSuccess          = 0
+	StatusCodeResourceNotFound = 6702
+	TaskStatusSuccess          = "success"
+	TaskStatusFailed           = "failed"
 )
 
 type baseResponse struct {
@@ -44,6 +46,26 @@ type GetIntranetDnsDomainTaskStatusResponseBody struct {
 type GetIntranetDnsDomainTaskStatusResponse struct {
 	Body           GetIntranetDnsDomainTaskStatusResponseBody
 	HTTPStatusCode int
+}
+
+// GetIntranetDnsDomainResponseBody 查询域名记录的响应体。
+type GetIntranetDnsDomainResponseBody struct {
+	baseResponse
+	Data domainStatus `json:"data"`
+}
+
+// GetIntranetDnsDomainResponse 查询域名记录响应，包含响应体和 HTTP 状态码。
+type GetIntranetDnsDomainResponse struct {
+	Body           GetIntranetDnsDomainResponseBody
+	HTTPStatusCode int
+}
+
+// IsIntranetDnsDomainNotFound checks lbm-dns not-found responses.
+func IsIntranetDnsDomainNotFound(resp *GetIntranetDnsDomainResponse) bool {
+	if resp == nil {
+		return false
+	}
+	return resp.Body.Code == StatusCodeResourceNotFound
 }
 
 type domainStatus struct {

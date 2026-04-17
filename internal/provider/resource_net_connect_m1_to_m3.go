@@ -497,7 +497,7 @@ func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepEndpoint(ctx context.Context
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		_, innerErr := r.m1PlusVpcepClient.DeleteEndpoint(deleteReq)
 		if innerErr != nil {
-			if utils.IsNotFoundError(innerErr) {
+			if utils.IsHuaweiCloudNotFoundError(innerErr) {
 				return nil
 			}
 			tflog.Warn(ctx, "DeleteEndpoint API failed, retrying", map[string]any{
@@ -527,7 +527,7 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		_, innerErr := r.m3VpcepClient.DeleteEndpointService(deleteReq)
 		if innerErr != nil {
-			if utils.IsNotFoundError(innerErr) {
+			if utils.IsHuaweiCloudNotFoundError(innerErr) {
 				return nil
 			}
 			tflog.Warn(ctx, "DeleteEndpointService API failed, retrying", map[string]any{
@@ -715,10 +715,11 @@ func (r *netConnectM1ToM3Resource) addVpcepServicePermission(ctx context.Context
 	return nil
 }
 
-// Read 逻辑：
-// - VpcepServiceId 有值 → 查询 API 验证存在性，404 → null
-// - VpcepServiceId 为 null → 直接信任 state
-// - 全部子资源均为 null → RemoveResource
+// Read 逻辑（Partial Repair 策略）：
+// - 查询所有子资源的存在性（VpcepService、VpcepEndpoint、LbmDnsRecord）
+// - 若某个子资源返回 404，则仅将其 Computed ID 字段置为 null（不调用 RemoveResource）
+// - Input 属性保留在 State 中（Plan 会保留原始值），供 Update 阶段使用进行修复重建
+// - 若所有子资源均不存在，则调用 RemoveResource
 func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Read started")
 	var state netConnectM1ToM3Model
@@ -732,8 +733,8 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
 		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
 		if err != nil {
-			if utils.IsNotFoundError(err) {
-				tflog.Info(ctx, "Vpcep-service not found, marking as null", map[string]any{
+			if utils.IsHuaweiCloudNotFoundError(err) {
+				tflog.Info(ctx, "Vpcep-service not found, marking as null (Partial Repair)", map[string]any{
 					"service_id": state.VpcepServiceId.ValueString(),
 				})
 				state.VpcepServiceId = types.StringNull()
@@ -744,8 +745,45 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		}
 	}
 
-	// TODO: 验证 vpcep-endpoint 是否仍存在（当VpcepEndpointId有值时）
-	// TODO: 验证 lbm-dns 记录是否仍存在（当LbmDnsRecordId有值时）
+	// 验证 vpcep-endpoint 是否仍存在
+	if !state.VpcepEndpointId.IsNull() {
+		getReq := &model.ListEndpointInfoDetailsRequest{
+			VpcEndpointId: state.VpcepEndpointId.ValueString(),
+		}
+		_, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
+		if err != nil {
+			if utils.IsHuaweiCloudNotFoundError(err) {
+				tflog.Info(ctx, "Vpcep-endpoint not found, marking as null (Partial Repair)", map[string]any{
+					"endpoint_id": state.VpcepEndpointId.ValueString(),
+				})
+				state.VpcepEndpointId = types.StringNull()
+				state.VpcepEndpointIp = types.StringNull()
+			} else {
+				resp.Diagnostics.AddError("query vpcep-endpoint failed", err.Error())
+				return
+			}
+		}
+	}
+
+	// 验证 lbm-dns 记录是否仍存在
+	if !state.LbmDnsRecordId.IsNull() {
+		dnsResp, err := r.m3LbmDnsClient.GetIntranetDnsDomain(ctx, state.LbmDnsRecordId.ValueString())
+		tflog.Debug(ctx, "Receive lbm dns query response", map[string]any{
+			"response": dnsResp,
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("query lbm-dns record failed", err.Error())
+			return
+		} else if lbmdnsclient.IsIntranetDnsDomainNotFound(dnsResp) {
+			tflog.Info(ctx, "lbm-dns record not found, marking as null (Partial Repair)", map[string]any{
+				"dns_record_id": state.LbmDnsRecordId.ValueString(),
+				"status":        dnsResp.Body.Status,
+				"code":          dnsResp.Body.Code,
+				"msg":           dnsResp.Body.ErrMsg,
+			})
+			state.LbmDnsRecordId = types.StringNull()
+		}
+	}
 
 	// 全部子资源均不存在时，移除整个 resource
 	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() &&

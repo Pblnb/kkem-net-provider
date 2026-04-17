@@ -18,9 +18,9 @@ func BoolPtr(b bool) *bool {
 	return &b
 }
 
-// IsNotFoundError checks if the error is a 404 Not Found response from Huawei Cloud SDK.
+// IsHuaweiCloudNotFoundError checks if the error is a 404 Not Found response from Huawei Cloud SDK.
 // It uses type assertion to extract the ServiceResponseError and check the StatusCode.
-func IsNotFoundError(err error) bool {
+func IsHuaweiCloudNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
