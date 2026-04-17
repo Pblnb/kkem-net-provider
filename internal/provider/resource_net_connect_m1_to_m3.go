@@ -426,32 +426,32 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
 		case <-ticker.C:
-			resp, httpStatus, err := r.m3LbmDnsClient.GetLbmDnsTaskStatus(ctx, taskId)
+			resp, err := r.m3LbmDnsClient.GetLbmDnsTaskStatus(ctx, taskId)
 			if err != nil {
 				tflog.Warn(ctx, "query lbm-dns task status failed (network error), retrying", map[string]any{"task_id": taskId, "error": err.Error()})
 				continue
 			}
-			if httpStatus < 200 || httpStatus >= 300 {
-				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying", map[string]any{"task_id": taskId, "http_status": httpStatus})
+			if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
+				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying", map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode})
 				continue
 			}
-			if resp.Status != lbmdnsclient.StatusCodeSuccess || resp.Code != lbmdnsclient.StatusCodeSuccess {
-				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code,
-					resp.ErrMsg)
+			if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
+				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status, resp.Body.Code,
+					resp.Body.ErrMsg)
 			}
 
-			status := resp.Data.Status
+			status := resp.Body.Data.Status
 			tflog.Debug(ctx, "DNS record creation task status check",
 				map[string]any{"task_id": taskId, "status": status})
 
 			switch status {
 			case lbmdnsclient.TaskStatusSuccess:
-				if resp.Data.ResourceId == "" {
+				if resp.Body.Data.ResourceId == "" {
 					return "", fmt.Errorf("task completed but no resource_id returned")
 				}
-				return resp.Data.ResourceId, nil
+				return resp.Body.Data.ResourceId, nil
 			case lbmdnsclient.TaskStatusFailed:
-				return "", fmt.Errorf("dns record creation task failed: %s", resp.Data.Message)
+				return "", fmt.Errorf("dns record creation task failed: %s", resp.Body.Data.Message)
 			default:
 				continue
 			}
@@ -536,23 +536,23 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 
 	var taskId string
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
-		resp, httpStatus, innerErr := r.m3LbmDnsClient.CreateLbmDnsRecord(ctx, plan.RegionCode, plan.LbmDnsServiceName,
+		resp, innerErr := r.m3LbmDnsClient.CreateLbmDnsRecord(ctx, plan.RegionCode, plan.LbmDnsServiceName,
 			plan.DnsDomain, plan.DnsDomainSuffix, clientIp)
 		if innerErr != nil {
 			tflog.Warn(ctx, "CreateLbmDnsRecord API failed, retrying", map[string]any{"error": innerErr.Error()})
 			return innerErr
 		}
-		if httpStatus < 200 || httpStatus >= 300 {
-			return fmt.Errorf("create DNS record failed: httpStatusCode=%d", httpStatus)
+		if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
+			return fmt.Errorf("create DNS record failed: httpStatusCode=%d", resp.HTTPStatusCode)
 		}
-		if resp.Status != lbmdnsclient.StatusCodeSuccess || resp.Code != lbmdnsclient.StatusCodeSuccess {
-			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Status, resp.Code,
-				resp.ErrMsg)
+		if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
+			return fmt.Errorf("create DNS record failed: status=%d, code=%d, errMsg=%s", resp.Body.Status, resp.Body.Code,
+				resp.Body.ErrMsg)
 		}
-		if resp.TaskId == "" {
+		if resp.Body.TaskId == "" {
 			return fmt.Errorf("create DNS record response has no task_id")
 		}
-		taskId = resp.TaskId
+		taskId = resp.Body.TaskId
 		return nil
 	})
 	if err != nil {

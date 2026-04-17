@@ -22,14 +22,24 @@ type baseResponse struct {
 	ProviderCode string `json:"provider_code"`
 }
 
-type domainChangeResponse struct {
+type domainChangeResponseBody struct {
 	baseResponse
 	TaskId string `json:"data,omitempty"`
 }
 
-type domainTaskStatusResponse struct {
+type domainChangeResponse struct {
+	Body           domainChangeResponseBody
+	HTTPStatusCode int
+}
+
+type domainTaskStatusResponseBody struct {
 	baseResponse
 	Data domainStatus `json:"data,omitempty"`
+}
+
+type domainTaskStatusResponse struct {
+	Body           domainTaskStatusResponseBody
+	HTTPStatusCode int
 }
 
 type domainStatus struct {
