@@ -55,21 +55,28 @@ type netConnectM1ToM3Resource struct {
 }
 
 type netConnectM1ToM3Model struct {
+	// M3 Parameters
 	M3VpcId                   string                        `tfsdk:"m3_vpc_id"`
 	M3ServerType              string                        `tfsdk:"m3_server_type"`
 	M3PortId                  string                        `tfsdk:"m3_port_id"`
 	M3VpcepServicePorts       []vpcepServicePortBlock       `tfsdk:"m3_vpcep_service_ports"`
 	M3VpcepServicePermissions []vpcepServicePermissionBlock `tfsdk:"m3_vpcep_service_permissions"`
-	M1PlusVpcId               string                        `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId            string                        `tfsdk:"m1_plus_subnet_id"`
-	DnsDomain                 string                        `tfsdk:"dns_domain"`
-	DnsDomainSuffix           string                        `tfsdk:"dns_domain_suffix"`
-	LbmDnsServiceName         string                        `tfsdk:"lbm_dns_service_name"`
-	RegionCode                string                        `tfsdk:"region_code"`
-	VpcepServiceId            types.String                  `tfsdk:"vpcep_service_id"`
-	VpcepEndpointId           types.String                  `tfsdk:"vpcep_endpoint_id"`
-	LbmDnsRecordId            types.String                  `tfsdk:"lbm_dns_record_id"`
-	LbmDnsRecordValues        types.List                    `tfsdk:"lbm_dns_record_values"`
+
+	// M1+ Parameters
+	M1PlusVpcId    string `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId string `tfsdk:"m1_plus_subnet_id"`
+
+	// LBM DNS Parameters
+	DnsDomain         string `tfsdk:"dns_domain"`
+	DnsDomainSuffix   string `tfsdk:"dns_domain_suffix"`
+	LbmDnsServiceName string `tfsdk:"lbm_dns_service_name"`
+	RegionCode        string `tfsdk:"region_code"`
+
+	// Computed Parameters
+	VpcepServiceId     types.String `tfsdk:"vpcep_service_id"`
+	VpcepEndpointId    types.String `tfsdk:"vpcep_endpoint_id"`
+	LbmDnsRecordId     types.String `tfsdk:"lbm_dns_record_id"`
+	LbmDnsRecordValues types.List   `tfsdk:"lbm_dns_record_values"`
 }
 
 type vpcepServicePortBlock struct {
@@ -99,10 +106,10 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 	resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
+			// M3 Parameters
 			"m3_vpc_id":      schema.StringAttribute{Required: true},
 			"m3_server_type": schema.StringAttribute{Required: true},
 			"m3_port_id":     schema.StringAttribute{Required: true},
-
 			"m3_vpcep_service_ports": schema.ListNestedAttribute{
 				Required: true,
 				NestedObject: schema.NestedAttributeObject{
@@ -121,15 +128,20 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 				},
 			},
 
-			"m1_plus_vpc_id":       schema.StringAttribute{Required: true},
-			"m1_plus_subnet_id":    schema.StringAttribute{Required: true},
+			// M1+ Parameters
+			"m1_plus_vpc_id":    schema.StringAttribute{Required: true},
+			"m1_plus_subnet_id": schema.StringAttribute{Required: true},
+
+			// LBM DNS Parameters
 			"dns_domain":           schema.StringAttribute{Required: true},
 			"dns_domain_suffix":    schema.StringAttribute{Required: true},
 			"lbm_dns_service_name": schema.StringAttribute{Required: true},
 			"region_code":          schema.StringAttribute{Required: true},
-			"vpcep_service_id":     schema.StringAttribute{Computed: true},
-			"vpcep_endpoint_id":    schema.StringAttribute{Computed: true},
-			"lbm_dns_record_id":    schema.StringAttribute{Computed: true},
+
+			// Computed Parameters
+			"vpcep_service_id":  schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_id": schema.StringAttribute{Computed: true},
+			"lbm_dns_record_id": schema.StringAttribute{Computed: true},
 			"lbm_dns_record_values": schema.ListNestedAttribute{
 				Computed: true,
 				NestedObject: schema.NestedAttributeObject{
@@ -175,114 +187,143 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 
 	// success 标志：只有整个 Create 流程完全成功才设为 true，用于控制回滚
 	success := false
-	defer func() {
-		if !success {
-			tflog.Info(ctx, "Create failed, executing rollback", map[string]any{})
-			if rollbackErrs := r.rollbackCreate(ctx, &plan); len(rollbackErrs) > 0 {
-				details := make([]string, len(rollbackErrs))
-				for i, err := range rollbackErrs {
-					details[i] = err.Error()
-				}
-				resp.Diagnostics.AddWarning(
-					"resource creation failed and rollback encountered errors, manual cleanup may be required",
-					fmt.Sprintf("resource creation failed, triggering rollback. errors occurred during rollback, please check and manually clean up residual resources:\n%s",
-						strings.Join(details, "\n")),
-				)
-			}
-		}
-	}()
+	defer r.rollbackCreateOnFailure(ctx, &plan, &success, resp)
 
-	// Step 1.1 - 在 M3 侧创建 vpcep-service
-	vpcepServiceId, err := r.createM3VpcepService(ctx, &plan)
+	vpcepServiceId, err := r.createAndWaitVpcepService(ctx, &plan)
 	if err != nil {
 		resp.Diagnostics.AddError("create vpcep-service failed", err.Error())
 		return
+	}
+
+	vpcepEndpointId, endpointIp, err := r.createAndWaitVpcepEndpoint(ctx, &plan, vpcepServiceId)
+	if err != nil {
+		resp.Diagnostics.AddError("create vpcep-endpoint failed", err.Error())
+		return
+	}
+
+	dnsRecordId, err := r.createAndWaitLbmDnsRecord(ctx, &plan, endpointIp)
+	if err != nil {
+		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
+		return
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// 全部流程成功完成
+	success = true
+	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Create completed", map[string]any{
+		"service_id":    vpcepServiceId,
+		"endpoint_id":   vpcepEndpointId,
+		"endpoint_ip":   endpointIp,
+		"dns_record_id": dnsRecordId,
+	})
+	normalizeM1ToM3ListState(&plan)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+func (r *netConnectM1ToM3Resource) createAndWaitVpcepService(ctx context.Context,
+	plan *netConnectM1ToM3Model) (vpcepServiceId string, err error) {
+	vpcepServiceId, err = r.createM3VpcepService(ctx, plan)
+	if err != nil {
+		return "", fmt.Errorf("create vpcep-service failed: %w", err)
 	}
 	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
 	tflog.Info(ctx, "Step 1.1 completed: vpcep-service created", map[string]any{
 		"service_id": vpcepServiceId,
 	})
 
-	// Step 1.2 - 轮询等待 vpcep-service 状态变为 available
 	if err := r.waitForVpcepServiceReady(ctx, vpcepServiceId); err != nil {
-		resp.Diagnostics.AddError("wait for vpcep-service ready failed", err.Error())
-		return
+		return "", fmt.Errorf("wait for vpcep-service ready failed: %w", err)
 	}
 	tflog.Info(ctx, "Step 1.2 completed: vpcep-service is ready", map[string]any{
 		"service_id": vpcepServiceId,
 	})
 
-	// Step 2 - 配置 vpcep-service 白名单
 	if err := r.addVpcepServicePermissions(ctx, vpcepServiceId, plan.M3VpcepServicePermissions); err != nil {
-		resp.Diagnostics.AddError("add vpcep-service permission failed", err.Error())
-		return
+		return "", fmt.Errorf("add vpcep-service permission failed: %w", err)
 	}
 	tflog.Info(ctx, "Step 2 completed: vpcep-service permission added", map[string]any{
 		"service_id":  vpcepServiceId,
 		"permissions": len(plan.M3VpcepServicePermissions),
 	})
+	return vpcepServiceId, nil
+}
 
-	// Step 3.1 - 在 M1+ 侧创建 vpcep-endpoint
-	vpcepEndpointId, err := r.createM1PlusVpcepEndpoint(ctx, &plan, vpcepServiceId)
+func (r *netConnectM1ToM3Resource) createAndWaitVpcepEndpoint(ctx context.Context, plan *netConnectM1ToM3Model,
+	vpcepServiceId string) (vpcepEndpointId string, endpointIp string, err error) {
+	vpcepEndpointId, err = r.createM1PlusVpcepEndpoint(ctx, plan, vpcepServiceId)
 	if err != nil {
-		resp.Diagnostics.AddError("create vpcep-endpoint failed", err.Error())
-		return
+		return "", "", fmt.Errorf("create vpcep-endpoint failed: %w", err)
 	}
 	plan.VpcepEndpointId = types.StringValue(vpcepEndpointId)
 	tflog.Info(ctx, "Step 3.1 completed: vpcep-endpoint created", map[string]any{
-		"client_id": vpcepEndpointId,
+		"endpoint_id": vpcepEndpointId,
 	})
 
-	// Step 3.2 - 轮询等待 Client 状态就绪
-	clientIp, err := r.waitForVpcepEndpointReady(ctx, vpcepEndpointId)
+	endpointIp, err = r.waitForVpcepEndpointReady(ctx, vpcepEndpointId)
 	if err != nil {
-		resp.Diagnostics.AddError("wait for vpcep-endpoint ready failed", err.Error())
-		return
+		return "", "", fmt.Errorf("wait for vpcep-endpoint ready failed: %w", err)
 	}
 	tflog.Info(ctx, "Step 3.2 completed: vpcep-endpoint is ready", map[string]any{
-		"client_id": vpcepEndpointId,
-		"ip":        clientIp,
+		"endpoint_id": vpcepEndpointId,
+		"ip":          endpointIp,
 	})
+	return vpcepEndpointId, endpointIp, nil
+}
 
-	// Step 4.1 - 创建 lbm-dns 解析记录
-	taskId, err := r.createLbmDnsRecord(ctx, &plan, clientIp)
+func (r *netConnectM1ToM3Resource) createAndWaitLbmDnsRecord(ctx context.Context, plan *netConnectM1ToM3Model,
+	endpointIp string) (dnsRecordId string, err error) {
+	taskId, err := r.createLbmDnsRecord(ctx, plan, endpointIp)
 	if err != nil {
-		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
-		return
+		return "", fmt.Errorf("create lbm-dns record failed: %w", err)
 	}
 
-	// Step 4.2 - 轮询等待 lbm-dns 记录就绪
-	dnsRecordId, err := r.waitForLbmDnsRecordReady(ctx, taskId)
+	dnsRecordId, err = r.waitForLbmDnsRecordReady(ctx, taskId)
 	if err != nil {
-		resp.Diagnostics.AddError("wait for lbm-dns record ready failed", err.Error())
-		return
+		return "", fmt.Errorf("wait for lbm-dns record ready failed: %w", err)
 	}
 	plan.LbmDnsRecordId = types.StringValue(dnsRecordId)
-	lbmDnsRecordValues, recordValueDiags := buildLbmDnsRecordValues([]lbmDnsRecordValueBlock{
-		{
-			RecordType:  "A",
-			RecordValue: clientIp,
-		},
-	})
-	resp.Diagnostics.Append(recordValueDiags...)
-	if resp.Diagnostics.HasError() {
-		return
+	if err := setLbmDnsRecordValues(plan, endpointIp); err != nil {
+		return "", err
 	}
-	plan.LbmDnsRecordValues = lbmDnsRecordValues
 	tflog.Info(ctx, "Step 4.2 completed: lbm-dns record created", map[string]any{
 		"dns_record_id": dnsRecordId,
 	})
+	return dnsRecordId, nil
+}
 
-	// 全部流程成功完成
-	success = true
-	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Create completed", map[string]any{
-		"service_id":    vpcepServiceId,
-		"client_id":     vpcepEndpointId,
-		"client_ip":     clientIp,
-		"dns_record_id": dnsRecordId,
+func (r *netConnectM1ToM3Resource) rollbackCreateOnFailure(ctx context.Context, plan *netConnectM1ToM3Model,
+	success *bool, resp *resource.CreateResponse) {
+	if *success {
+		return
+	}
+	tflog.Info(ctx, "Create failed, executing rollback", map[string]any{})
+	if rollbackErrs := r.rollbackCreate(ctx, plan); len(rollbackErrs) > 0 {
+		details := make([]string, len(rollbackErrs))
+		for i, err := range rollbackErrs {
+			details[i] = err.Error()
+		}
+		resp.Diagnostics.AddWarning(
+			"resource creation failed and rollback encountered errors, manual cleanup may be required",
+			fmt.Sprintf("resource creation failed, triggering rollback. errors occurred during rollback, please check and manually clean up residual resources:\n%s",
+				strings.Join(details, "\n")),
+		)
+	}
+}
+
+func setLbmDnsRecordValues(plan *netConnectM1ToM3Model, endpointIp string) error {
+	lbmDnsRecordValues, recordValueDiags := buildLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+		{
+			RecordType:  "A",
+			RecordValue: endpointIp,
+		},
 	})
-	normalizeM1ToM3ListState(&plan)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	if recordValueDiags.HasError() {
+		return fmt.Errorf("build lbm-dns record values failed: %s", recordValueDiags.Errors()[0].Detail())
+	}
+	plan.LbmDnsRecordValues = lbmDnsRecordValues
+	return nil
 }
 
 // getVpcepServerType 将字符串转换为 API 调用所需类型。注意：目前仅支持 VM 和 LB 两种类型，默认返回 LB。
@@ -393,8 +434,8 @@ func (r *netConnectM1ToM3Resource) createM1PlusVpcepEndpoint(ctx context.Context
 	}
 
 	tflog.Info(ctx, "Vpcep-endpoint created", map[string]any{
-		"client_id": *createResp.Id,
-		"status":    *createResp.Status,
+		"endpoint_id": *createResp.Id,
+		"status":      *createResp.Status,
 	})
 
 	return *createResp.Id, nil
@@ -402,7 +443,7 @@ func (r *netConnectM1ToM3Resource) createM1PlusVpcepEndpoint(ctx context.Context
 
 // waitForVpcepEndpointReady 轮询等待 vpcep-endpoint 状态变为 accepted 后返回 endpoint IP。
 func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context,
-	clientId string) (string, error) {
+	endpointId string) (string, error) {
 	timeout := time.After(vpcepEndpointPollingTimeout)
 	ticker := time.NewTicker(vpcepEndpointPollingInterval)
 	defer ticker.Stop()
@@ -411,12 +452,12 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 	for {
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("context cancelled while waiting for vpcep-endpoint %s", clientId)
+			return "", fmt.Errorf("context cancelled while waiting for vpcep-endpoint %s", endpointId)
 		case <-timeout:
-			return "", fmt.Errorf("timeout waiting for vpcep-endpoint %s to be ready", clientId)
+			return "", fmt.Errorf("timeout waiting for vpcep-endpoint %s to be ready", endpointId)
 		case <-ticker.C:
 			getReq := &model.ListEndpointInfoDetailsRequest{
-				VpcEndpointId: clientId,
+				VpcEndpointId: endpointId,
 			}
 
 			getResp, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
@@ -426,9 +467,9 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 					return "", fmt.Errorf("query vpcep-endpoint status failed: %w", err)
 				}
 				tflog.Warn(ctx, "query vpcep-endpoint failed, will retry", map[string]any{
-					"client_id": clientId,
-					"error":     err.Error(),
-					"err_count": errCount,
+					"endpoint_id": endpointId,
+					"error":       err.Error(),
+					"err_count":   errCount,
 				})
 				continue
 			}
@@ -440,35 +481,42 @@ func (r *netConnectM1ToM3Resource) waitForVpcepEndpointReady(ctx context.Context
 
 			status := *getResp.Status
 			tflog.Debug(ctx, "Vpcep-endpoint status check", map[string]any{
-				"client_id": clientId,
-				"status":    status,
+				"endpoint_id": endpointId,
+				"status":      status,
 			})
 
-			switch status {
-			case "accepted":
-				if getResp.Ip == nil {
-					return "", fmt.Errorf("vpcep-endpoint is accepted but has no IP")
-				}
-				tflog.Info(ctx, "Vpcep-endpoint is ready", map[string]any{
-					"client_id": clientId,
-					"ip":        *getResp.Ip,
-				})
-				return *getResp.Ip, nil
-			case "failed", "rejected":
-				return "", fmt.Errorf("vpcep-endpoint %s status is %s", clientId, status)
-			case "deleting":
-				return "", fmt.Errorf("vpcep-endpoint %s is being deleted", clientId)
-			case "creating", "pendingAcceptance":
-				// 继续轮询
-				continue
-			default:
-				// 未知状态，继续轮询
-				tflog.Warn(ctx, "Vpcep-endpoint unknown status", map[string]any{
-					"client_id": clientId,
-					"status":    status,
-				})
+			endpointIp, isReady, err := handleVpcepEndpointStatus(ctx, endpointId, status, getResp.Ip)
+			if err != nil || isReady {
+				return endpointIp, err
 			}
 		}
+	}
+}
+
+func handleVpcepEndpointStatus(ctx context.Context, endpointId, status string,
+	endpointIp *string) (readyEndpointIp string, isReady bool, err error) {
+	switch status {
+	case "accepted":
+		if endpointIp == nil {
+			return "", true, fmt.Errorf("vpcep-endpoint is accepted but has no IP")
+		}
+		tflog.Info(ctx, "Vpcep-endpoint is ready", map[string]any{
+			"endpoint_id": endpointId,
+			"ip":          *endpointIp,
+		})
+		return *endpointIp, true, nil
+	case "failed", "rejected":
+		return "", true, fmt.Errorf("vpcep-endpoint %s status is %s", endpointId, status)
+	case "deleting":
+		return "", true, fmt.Errorf("vpcep-endpoint %s is being deleted", endpointId)
+	case "creating", "pendingAcceptance":
+		return "", false, nil
+	default:
+		tflog.Warn(ctx, "Vpcep-endpoint unknown status", map[string]any{
+			"endpoint_id": endpointId,
+			"status":      status,
+		})
+		return "", false, nil
 	}
 }
 
@@ -486,64 +534,84 @@ func (r *netConnectM1ToM3Resource) waitForLbmDnsRecordReady(ctx context.Context,
 		case <-timeout:
 			return "", fmt.Errorf("timeout waiting for DNS record creation task: %s", taskId)
 		case <-ticker.C:
-			resp, err := r.m3LbmDnsClient.GetIntranetDnsDomainTaskStatus(ctx, taskId)
+			resp, shouldContinue, err := r.queryLbmDnsTaskStatus(ctx, taskId, &errCount)
 			if err != nil {
-				errCount++
-				if errCount >= pollingErrTolerance {
-					return "", fmt.Errorf("query lbm-dns task status failed: %w", err)
-				}
-				tflog.Warn(ctx, "query lbm-dns task failed, will retry", map[string]any{
-					"task_id":   taskId,
-					"error":     err.Error(),
-					"err_count": errCount,
-				})
+				return "", err
+			}
+			if shouldContinue {
 				continue
-			}
-			errCount = 0
-
-			if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
-				tflog.Warn(ctx, "query lbm-dns task status failed (http error), retrying",
-					map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode, "response_body": resp.Body})
-				return "", fmt.Errorf("query lbm-dns task status failed, http status is %d", resp.HTTPStatusCode)
-			}
-
-			if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
-				return "", fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
-					resp.Body.Code, resp.Body.ErrMsg)
 			}
 
 			status := resp.Body.Data.Status
 			tflog.Debug(ctx, "DNS record creation task status check",
 				map[string]any{"task_id": taskId, "status": status})
 
-			switch status {
-			case lbmdnsclient.TaskStatusSuccess:
-				if resp.Body.Data.ResourceId == "" {
-					return "", fmt.Errorf("task completed but no resource_id returned")
-				}
-				return resp.Body.Data.ResourceId, nil
-			case lbmdnsclient.TaskStatusFailed:
-				return "", fmt.Errorf("dns record creation task failed: %s", resp.Body.Data.Message)
-			default:
-				continue
+			resourceId, isReady, err := handleLbmDnsTaskStatus(resp.Body.Data.Status, resp.Body.Data.ResourceId,
+				resp.Body.Data.Message)
+			if err != nil || isReady {
+				return resourceId, err
 			}
 		}
 	}
 }
 
-func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepEndpoint(ctx context.Context, clientId string) error {
+func (r *netConnectM1ToM3Resource) queryLbmDnsTaskStatus(ctx context.Context, taskId string,
+	errCount *int) (resp *lbmdnsclient.GetIntranetDnsDomainTaskStatusResponse, shouldContinue bool, err error) {
+	resp, err = r.m3LbmDnsClient.GetIntranetDnsDomainTaskStatus(ctx, taskId)
+	if err != nil {
+		*errCount++
+		if *errCount >= pollingErrTolerance {
+			return nil, false, fmt.Errorf("query lbm-dns task status failed: %w", err)
+		}
+		tflog.Warn(ctx, "query lbm-dns task failed, will retry", map[string]any{
+			"task_id":   taskId,
+			"error":     err.Error(),
+			"err_count": *errCount,
+		})
+		return nil, true, nil
+	}
+	*errCount = 0
+
+	if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
+		tflog.Warn(ctx, "query lbm-dns task status failed (http error)",
+			map[string]any{"task_id": taskId, "http_status": resp.HTTPStatusCode, "response_body": resp.Body})
+		return nil, false, fmt.Errorf("query lbm-dns task status failed, http status is %d", resp.HTTPStatusCode)
+	}
+	if resp.Body.Status != lbmdnsclient.StatusCodeSuccess || resp.Body.Code != lbmdnsclient.StatusCodeSuccess {
+		return nil, false, fmt.Errorf("query task status failed: status=%d, code=%d, errMsg=%s", resp.Body.Status,
+			resp.Body.Code, resp.Body.ErrMsg)
+	}
+	return resp, false, nil
+}
+
+func handleLbmDnsTaskStatus(status, resourceId, message string) (dnsRecordId string, isReady bool, err error) {
+	switch status {
+	case lbmdnsclient.TaskStatusSuccess:
+		if resourceId == "" {
+			return "", true, fmt.Errorf("task completed but no resource_id returned")
+		}
+		return resourceId, true, nil
+	case lbmdnsclient.TaskStatusFailed:
+		return "", true, fmt.Errorf("dns record creation task failed: %s", message)
+	default:
+		return "", false, nil
+	}
+}
+
+func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepEndpoint(ctx context.Context, endpointId string) error {
 	deleteReq := &model.DeleteEndpointRequest{
-		VpcEndpointId: clientId,
+		VpcEndpointId: endpointId,
 	}
 
 	tflog.Debug(ctx, "Deleting vpcep-endpoint", map[string]any{
-		"client_id": clientId,
+		"endpoint_id": endpointId,
 	})
 
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		_, innerErr := r.m1PlusVpcepClient.DeleteEndpoint(deleteReq)
 		if innerErr != nil {
-			if utils.IsHuaweiCloudNotFoundError(innerErr) {
+			// 若响应是资源不存在则表示资源已删除，不需要重试
+			if utils.IsVpcepNotFoundError(innerErr) {
 				return nil
 			}
 			tflog.Warn(ctx, "DeleteEndpoint API failed, retrying", map[string]any{
@@ -556,7 +624,7 @@ func (r *netConnectM1ToM3Resource) deleteM1PlusVpcepEndpoint(ctx context.Context
 		return err
 	}
 	tflog.Info(ctx, "Vpcep-endpoint deleted", map[string]any{
-		"client_id": clientId,
+		"endpoint_id": endpointId,
 	})
 	return nil
 }
@@ -573,7 +641,8 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		_, innerErr := r.m3VpcepClient.DeleteEndpointService(deleteReq)
 		if innerErr != nil {
-			if utils.IsHuaweiCloudNotFoundError(innerErr) {
+			// 若响应是资源不存在则表示资源已删除，不需要重试
+			if utils.IsVpcepNotFoundError(innerErr) {
 				return nil
 			}
 			tflog.Warn(ctx, "DeleteEndpointService API failed, retrying", map[string]any{
@@ -593,7 +662,7 @@ func (r *netConnectM1ToM3Resource) deleteM3VpcepService(ctx context.Context, ser
 
 // createLbmDnsRecord 创建 lbm-dns 记录，返回 taskId。
 func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan *netConnectM1ToM3Model,
-	clientIp string) (string, error) {
+	endpointIp string) (string, error) {
 	if r.m3LbmDnsClient == nil {
 		return "", fmt.Errorf("m3 lbm-dns client is not initialized")
 	}
@@ -603,13 +672,13 @@ func (r *netConnectM1ToM3Resource) createLbmDnsRecord(ctx context.Context, plan 
 		"service_name":  plan.LbmDnsServiceName,
 		"host_record":   plan.DnsDomain,
 		"domain_suffix": plan.DnsDomainSuffix,
-		"client_ip":     clientIp,
+		"endpoint_ip":   endpointIp,
 	})
 
 	var taskId string
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
 		resp, innerErr := r.m3LbmDnsClient.CreateIntranetDnsDomain(ctx, plan.RegionCode, plan.LbmDnsServiceName,
-			plan.DnsDomain, plan.DnsDomainSuffix, clientIp)
+			plan.DnsDomain, plan.DnsDomainSuffix, endpointIp)
 		if innerErr != nil {
 			tflog.Warn(ctx, "CreateIntranetDnsDomain API failed, retrying", map[string]any{"error": innerErr.Error()})
 			return innerErr
@@ -776,77 +845,21 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	// 验证 vpcep-service 是否仍存在
-	if !state.VpcepServiceId.IsNull() {
-		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
-		serviceResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
-		if err != nil {
-			if utils.IsHuaweiCloudNotFoundError(err) {
-				tflog.Info(ctx, "Vpcep-service not found, marking as null (Partial Repair)", map[string]any{
-					"service_id": state.VpcepServiceId.ValueString(),
-				})
-				state.VpcepServiceId = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("query vpcep-service failed", err.Error())
-				return
-			}
-		} else {
-			syncVpcepServiceState(&state, serviceResp)
-			if err := r.syncVpcepServicePermissionState(ctx, &state, state.VpcepServiceId.ValueString()); err != nil {
-				resp.Diagnostics.AddError("query vpcep-service permission failed", err.Error())
-				return
-			}
-		}
+	if err := r.refreshVpcepServiceState(ctx, &state); err != nil {
+		resp.Diagnostics.AddError("query vpcep-service failed", err.Error())
+		return
 	}
 
 	// 验证 vpcep-endpoint 是否仍存在
-	if !state.VpcepEndpointId.IsNull() {
-		getReq := &model.ListEndpointInfoDetailsRequest{
-			VpcEndpointId: state.VpcepEndpointId.ValueString(),
-		}
-		endpointResp, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
-		if err != nil {
-			if utils.IsHuaweiCloudNotFoundError(err) {
-				tflog.Info(ctx, "Vpcep-endpoint not found, marking as null (Partial Repair)", map[string]any{
-					"endpoint_id": state.VpcepEndpointId.ValueString(),
-				})
-				state.VpcepEndpointId = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("query vpcep-endpoint failed", err.Error())
-				return
-			}
-		} else {
-			syncVpcepEndpointState(&state, endpointResp)
-		}
+	if err := r.refreshVpcepEndpointState(ctx, &state); err != nil {
+		resp.Diagnostics.AddError("query vpcep-endpoint failed", err.Error())
+		return
 	}
 
 	// 验证 lbm-dns 记录是否仍存在
-	if !state.LbmDnsRecordId.IsNull() {
-		dnsResp, err := r.m3LbmDnsClient.GetIntranetDnsDomain(ctx, state.LbmDnsRecordId.ValueString())
-		tflog.Debug(ctx, "Receive lbm dns query response", map[string]any{
-			"response": dnsResp,
-		})
-		if err != nil {
-			resp.Diagnostics.AddError("query lbm-dns record failed", err.Error())
-			return
-		} else if dnsResp.HTTPStatusCode < 200 || dnsResp.HTTPStatusCode >= 300 {
-			resp.Diagnostics.AddError("query lbm-dns record failed",
-				fmt.Sprintf("http status is %d", dnsResp.HTTPStatusCode))
-			return
-		} else if lbmdnsclient.IsIntranetDnsDomainNotFound(dnsResp) {
-			tflog.Info(ctx, "lbm-dns record not found, marking as null (Partial Repair)", map[string]any{
-				"dns_record_id": state.LbmDnsRecordId.ValueString(),
-				"status":        dnsResp.Body.Status,
-				"code":          dnsResp.Body.Code,
-				"msg":           dnsResp.Body.ErrMsg,
-			})
-			state.LbmDnsRecordId = types.StringNull()
-			state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
-		} else {
-			resp.Diagnostics.Append(syncLbmDnsState(&state, dnsResp)...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-		}
+	resp.Diagnostics.Append(r.refreshLbmDnsState(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	// 全部子资源均不存在时，移除整个 resource
@@ -858,6 +871,117 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func (r *netConnectM1ToM3Resource) refreshVpcepServiceState(ctx context.Context,
+	state *netConnectM1ToM3Model) error {
+	if state.VpcepServiceId.IsNull() {
+		return nil
+	}
+
+	getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
+	var serviceResp *model.ListServiceDetailsResponse
+	serviceNotFound := false
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var innerErr error
+		serviceResp, innerErr = r.m3VpcepClient.ListServiceDetails(getReq)
+		if utils.IsVpcepNotFoundError(innerErr) {
+			serviceNotFound = true
+			return nil
+		}
+		return innerErr
+	})
+	if err != nil {
+		return err
+	}
+	if serviceNotFound {
+		tflog.Info(ctx, "Vpcep-service not found, marking as null (Partial Repair)", map[string]any{
+			"service_id": state.VpcepServiceId.ValueString(),
+		})
+		state.VpcepServiceId = types.StringNull()
+		return nil
+	}
+
+	syncVpcepServiceState(state, serviceResp)
+	if err := r.syncVpcepServicePermissionState(ctx, state, state.VpcepServiceId.ValueString()); err != nil {
+		return fmt.Errorf("query vpcep-service permission failed: %w", err)
+	}
+	return nil
+}
+
+func (r *netConnectM1ToM3Resource) refreshVpcepEndpointState(ctx context.Context,
+	state *netConnectM1ToM3Model) error {
+	if state.VpcepEndpointId.IsNull() {
+		return nil
+	}
+
+	getReq := &model.ListEndpointInfoDetailsRequest{
+		VpcEndpointId: state.VpcepEndpointId.ValueString(),
+	}
+	var endpointResp *model.ListEndpointInfoDetailsResponse
+	endpointNotFound := false
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var innerErr error
+		endpointResp, innerErr = r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
+		if utils.IsVpcepNotFoundError(innerErr) {
+			endpointNotFound = true
+			return nil
+		}
+		return innerErr
+	})
+	if err != nil {
+		return err
+	}
+	if endpointNotFound {
+		tflog.Info(ctx, "Vpcep-endpoint not found, marking as null (Partial Repair)", map[string]any{
+			"endpoint_id": state.VpcepEndpointId.ValueString(),
+		})
+		state.VpcepEndpointId = types.StringNull()
+		return nil
+	}
+
+	syncVpcepEndpointState(state, endpointResp)
+	return nil
+}
+
+func (r *netConnectM1ToM3Resource) refreshLbmDnsState(ctx context.Context,
+	state *netConnectM1ToM3Model) diag.Diagnostics {
+	if state.LbmDnsRecordId.IsNull() {
+		return nil
+	}
+
+	dnsResp, err := r.m3LbmDnsClient.GetIntranetDnsDomain(ctx, state.LbmDnsRecordId.ValueString())
+	tflog.Debug(ctx, "Receive lbm dns query response", map[string]any{
+		"response": dnsResp,
+	})
+	if err != nil {
+		var diags diag.Diagnostics
+		diags.AddError("query lbm-dns record failed", err.Error())
+		return diags
+	}
+	return syncLbmDnsQueryResponse(ctx, state, dnsResp)
+}
+
+func syncLbmDnsQueryResponse(ctx context.Context, state *netConnectM1ToM3Model,
+	dnsResp *lbmdnsclient.GetIntranetDnsDomainResponse) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if dnsResp.HTTPStatusCode < 200 || dnsResp.HTTPStatusCode >= 300 {
+		diags.AddError("query lbm-dns record failed", fmt.Sprintf("http status is %d", dnsResp.HTTPStatusCode))
+		return diags
+	}
+	if dnsResp.IsNotFound() {
+		tflog.Info(ctx, "lbm-dns record not found, marking as null (Partial Repair)", map[string]any{
+			"dns_record_id": state.LbmDnsRecordId.ValueString(),
+			"status":        dnsResp.Body.Status,
+			"code":          dnsResp.Body.Code,
+			"msg":           dnsResp.Body.ErrMsg,
+		})
+		state.LbmDnsRecordId = types.StringNull()
+		state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+		return diags
+	}
+	diags.Append(syncLbmDnsState(state, dnsResp)...)
+	return diags
 }
 
 // syncVpcepServiceState 将 VPCEP-Service 远端真实属性同步到 Terraform state。

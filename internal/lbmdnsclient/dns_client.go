@@ -9,6 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"huawei.com/kkem/kkem-net-provider/internal/utils"
 )
 
 const (
@@ -36,10 +39,16 @@ func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
 		return nil, fmt.Errorf("marshal DNS request failed: %w", marshalErr)
 	}
 
-	respBytes, statusCode, doErr := c.doRequest(ctx, actionPost, pathCreateIntranetDnsDomain,
-		bytes.NewReader(bodyBytes))
-	if doErr != nil {
-		return nil, fmt.Errorf("send create DNS record request failed: %w", doErr)
+	var respBytes []byte
+	var statusCode int
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var doErr error
+		respBytes, statusCode, doErr = c.doRequest(ctx, actionPost, pathCreateIntranetDnsDomain,
+			bytes.NewReader(bodyBytes))
+		return doErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("send create DNS record request failed: %w", err)
 	}
 
 	var body CreateIntranetDnsDomainResponseBody
@@ -55,9 +64,15 @@ func (c *Client) GetIntranetDnsDomainTaskStatus(ctx context.Context,
 	taskId string) (*GetIntranetDnsDomainTaskStatusResponse, error) {
 	url := fmt.Sprintf(pathGetIntranetDnsDomainTaskStatus, taskId)
 
-	respBytes, statusCode, doErr := c.doRequest(ctx, actionGet, url, nil)
-	if doErr != nil {
-		return nil, fmt.Errorf("query task status failed: %w", doErr)
+	var respBytes []byte
+	var statusCode int
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var doErr error
+		respBytes, statusCode, doErr = c.doRequest(ctx, actionGet, url, nil)
+		return doErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query task status failed: %w", err)
 	}
 
 	var body GetIntranetDnsDomainTaskStatusResponseBody
@@ -72,9 +87,15 @@ func (c *Client) GetIntranetDnsDomainTaskStatus(ctx context.Context,
 func (c *Client) GetIntranetDnsDomain(ctx context.Context, resourceId string) (*GetIntranetDnsDomainResponse, error) {
 	url := fmt.Sprintf(pathGetIntranetDnsDomain, resourceId)
 
-	respBytes, statusCode, doErr := c.doRequest(ctx, actionGet, url, nil)
-	if doErr != nil {
-		return nil, fmt.Errorf("query DNS record failed: %w", doErr)
+	var respBytes []byte
+	var statusCode int
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var doErr error
+		respBytes, statusCode, doErr = c.doRequest(ctx, actionGet, url, nil)
+		return doErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query DNS record failed: %w", err)
 	}
 
 	var body GetIntranetDnsDomainResponseBody

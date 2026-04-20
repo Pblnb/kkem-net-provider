@@ -60,11 +60,12 @@ type GetIntranetDnsDomainResponse struct {
 	HTTPStatusCode int
 }
 
-// IsIntranetDnsDomainNotFound checks lbm-dns not-found responses.
-func IsIntranetDnsDomainNotFound(resp *GetIntranetDnsDomainResponse) bool {
+// IsNotFound checks lbm-dns not-found responses.
+func (resp *GetIntranetDnsDomainResponse) IsNotFound() bool {
 	if resp == nil {
 		return false
 	}
+	// lbm-dns 响应体中的 6702 代码表示资源不存在，而不是 404 HTTP 状态码
 	return resp.Body.Code == StatusCodeResourceNotFound
 }
 

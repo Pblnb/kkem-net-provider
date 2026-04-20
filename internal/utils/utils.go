@@ -13,21 +13,24 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 )
 
+const (
+	huaweiCloudVpcepNotFoundErrorCode = "EndPoint.0005"
+)
+
 // BoolPtr returns a pointer to a bool value.
 func BoolPtr(b bool) *bool {
 	return &b
 }
 
-// IsHuaweiCloudNotFoundError checks if the error is a 404 Not Found response from Huawei Cloud SDK.
-// It uses type assertion to extract the ServiceResponseError and check the StatusCode.
-func IsHuaweiCloudNotFoundError(err error) bool {
+// IsVpcepNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "EndPoint.0005" 错误代码
+func IsVpcepNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
 
 	var serviceErr *sdkerr.ServiceResponseError
 	if errors.As(err, &serviceErr) {
-		return serviceErr.StatusCode == http.StatusNotFound
+		return serviceErr.StatusCode == http.StatusNotFound && serviceErr.ErrorCode == huaweiCloudVpcepNotFoundErrorCode
 	}
 
 	return false
