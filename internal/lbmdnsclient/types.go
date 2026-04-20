@@ -51,7 +51,7 @@ type GetIntranetDnsDomainTaskStatusResponse struct {
 // GetIntranetDnsDomainResponseBody 查询域名记录的响应体。
 type GetIntranetDnsDomainResponseBody struct {
 	baseResponse
-	Data domainStatus `json:"data"`
+	Data *IntranetDnsDomainResource `json:"data"`
 }
 
 // GetIntranetDnsDomainResponse 查询域名记录响应，包含响应体和 HTTP 状态码。
@@ -74,15 +74,17 @@ type domainStatus struct {
 	Message    string `json:"msg,omitempty"`
 }
 
-type intranetDnsDomainResource struct {
-	RegionCode   string        `json:"regionCode" required:"true"`
-	ServiceName  string        `json:"serviceName" required:"true"`
-	HostRecord   string        `json:"hostRecord" required:"true"`
-	DomainSuffix string        `json:"domainSuffix" required:"true"`
-	RecordValues []recordValue `json:"recordValues" required:"true"`
+// IntranetDnsDomainResource describes an lbm-dns record resource.
+type IntranetDnsDomainResource struct {
+	RegionCode   string                   `json:"regionCode" required:"true"`
+	ServiceName  string                   `json:"serviceName" required:"true"`
+	HostRecord   string                   `json:"hostRecord" required:"true"`
+	DomainSuffix string                   `json:"domainSuffix" required:"true"`
+	RecordValues []IntranetDnsRecordValue `json:"recordValues" required:"true"`
 }
 
-type recordValue struct {
+// IntranetDnsRecordValue describes a single lbm-dns record value.
+type IntranetDnsRecordValue struct {
 	RecordType  string `json:"recordType" required:"true"`
 	RecordValue string `json:"recordValue" required:"true"`
 }

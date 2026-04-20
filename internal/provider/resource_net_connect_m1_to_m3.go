@@ -8,9 +8,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -23,6 +26,15 @@ import (
 )
 
 const resourceTypeName = "_net_connect_m1_to_m3"
+
+var lbmDnsRecordValueAttrTypes = map[string]attr.Type{
+	"record_type":  types.StringType,
+	"record_value": types.StringType,
+}
+
+var lbmDnsRecordValueObjectType = types.ObjectType{
+	AttrTypes: lbmDnsRecordValueAttrTypes,
+}
 
 const (
 	vpcepEndpointPollingInterval = 5 * time.Second
@@ -43,27 +55,35 @@ type netConnectM1ToM3Resource struct {
 }
 
 type netConnectM1ToM3Model struct {
-	M3VpcId             string                  `tfsdk:"m3_vpc_id"`
-	M3ServerType        string                  `tfsdk:"m3_server_type"`
-	M3PortId            string                  `tfsdk:"m3_port_id"`
-	M3VpcepServicePorts []vpcepServicePortBlock `tfsdk:"m3_vpcep_service_ports"`
-	M3VpcepServiceName  types.String            `tfsdk:"m3_vpcep_service_name"`
-	M1PlusVpcId         string                  `tfsdk:"m1_plus_vpc_id"`
-	M1PlusSubnetId      string                  `tfsdk:"m1_plus_subnet_id"`
-	M1PlusDomainId      string                  `tfsdk:"m1_plus_domain_id"`
-	DnsDomain           string                  `tfsdk:"dns_domain"`
-	DnsDomainSuffix     string                  `tfsdk:"dns_domain_suffix"`
-	LbmDnsServiceName   string                  `tfsdk:"lbm_dns_service_name"`
-	RegionCode          string                  `tfsdk:"region_code"`
-	VpcepServiceId      types.String            `tfsdk:"vpcep_service_id"`
-	VpcepEndpointId     types.String            `tfsdk:"vpcep_endpoint_id"`
-	VpcepEndpointIp     types.String            `tfsdk:"vpcep_endpoint_ip"`
-	LbmDnsRecordId      types.String            `tfsdk:"lbm_dns_record_id"`
+	M3VpcId                   string                        `tfsdk:"m3_vpc_id"`
+	M3ServerType              string                        `tfsdk:"m3_server_type"`
+	M3PortId                  string                        `tfsdk:"m3_port_id"`
+	M3VpcepServicePorts       []vpcepServicePortBlock       `tfsdk:"m3_vpcep_service_ports"`
+	M3VpcepServicePermissions []vpcepServicePermissionBlock `tfsdk:"m3_vpcep_service_permissions"`
+	M1PlusVpcId               string                        `tfsdk:"m1_plus_vpc_id"`
+	M1PlusSubnetId            string                        `tfsdk:"m1_plus_subnet_id"`
+	DnsDomain                 string                        `tfsdk:"dns_domain"`
+	DnsDomainSuffix           string                        `tfsdk:"dns_domain_suffix"`
+	LbmDnsServiceName         string                        `tfsdk:"lbm_dns_service_name"`
+	RegionCode                string                        `tfsdk:"region_code"`
+	VpcepServiceId            types.String                  `tfsdk:"vpcep_service_id"`
+	VpcepEndpointId           types.String                  `tfsdk:"vpcep_endpoint_id"`
+	LbmDnsRecordId            types.String                  `tfsdk:"lbm_dns_record_id"`
+	LbmDnsRecordValues        types.List                    `tfsdk:"lbm_dns_record_values"`
 }
 
 type vpcepServicePortBlock struct {
 	ClientPort int32 `tfsdk:"client_port"`
 	ServerPort int32 `tfsdk:"server_port"`
+}
+
+type vpcepServicePermissionBlock struct {
+	Permission string `tfsdk:"permission"`
+}
+
+type lbmDnsRecordValueBlock struct {
+	RecordType  string `tfsdk:"record_type"`
+	RecordValue string `tfsdk:"record_value"`
 }
 
 func NewNetConnectM1ToM3Resource() resource.Resource {
@@ -82,23 +102,43 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 			"m3_vpc_id":      schema.StringAttribute{Required: true},
 			"m3_server_type": schema.StringAttribute{Required: true},
 			"m3_port_id":     schema.StringAttribute{Required: true},
-			"m3_vpcep_service_ports": schema.ListNestedAttribute{Required: true,
-				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-					"client_port": schema.Int32Attribute{Required: true},
-					"server_port": schema.Int32Attribute{Required: true},
-				}}},
-			"m3_vpcep_service_name": schema.StringAttribute{Optional: true},
-			"m1_plus_vpc_id":        schema.StringAttribute{Required: true},
-			"m1_plus_subnet_id":     schema.StringAttribute{Required: true},
-			"m1_plus_domain_id":     schema.StringAttribute{Required: true},
-			"dns_domain":            schema.StringAttribute{Required: true},
-			"dns_domain_suffix":     schema.StringAttribute{Required: true},
-			"lbm_dns_service_name":  schema.StringAttribute{Required: true},
-			"region_code":           schema.StringAttribute{Required: true},
-			"vpcep_service_id":      schema.StringAttribute{Computed: true},
-			"vpcep_endpoint_id":     schema.StringAttribute{Computed: true},
-			"vpcep_endpoint_ip":     schema.StringAttribute{Computed: true},
-			"lbm_dns_record_id":     schema.StringAttribute{Computed: true},
+
+			"m3_vpcep_service_ports": schema.ListNestedAttribute{
+				Required: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"client_port": schema.Int32Attribute{Required: true},
+						"server_port": schema.Int32Attribute{Required: true},
+					},
+				},
+			},
+			"m3_vpcep_service_permissions": schema.ListNestedAttribute{
+				Required: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"permission": schema.StringAttribute{Required: true},
+					},
+				},
+			},
+
+			"m1_plus_vpc_id":       schema.StringAttribute{Required: true},
+			"m1_plus_subnet_id":    schema.StringAttribute{Required: true},
+			"dns_domain":           schema.StringAttribute{Required: true},
+			"dns_domain_suffix":    schema.StringAttribute{Required: true},
+			"lbm_dns_service_name": schema.StringAttribute{Required: true},
+			"region_code":          schema.StringAttribute{Required: true},
+			"vpcep_service_id":     schema.StringAttribute{Computed: true},
+			"vpcep_endpoint_id":    schema.StringAttribute{Computed: true},
+			"lbm_dns_record_id":    schema.StringAttribute{Computed: true},
+			"lbm_dns_record_values": schema.ListNestedAttribute{
+				Computed: true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"record_type":  schema.StringAttribute{Computed: true},
+						"record_value": schema.StringAttribute{Computed: true},
+					},
+				},
+			},
 		},
 	}
 }
@@ -173,13 +213,13 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	})
 
 	// Step 2 - 配置 vpcep-service 白名单
-	if err := r.addVpcepServicePermission(ctx, vpcepServiceId, plan.M1PlusDomainId); err != nil {
+	if err := r.addVpcepServicePermissions(ctx, vpcepServiceId, plan.M3VpcepServicePermissions); err != nil {
 		resp.Diagnostics.AddError("add vpcep-service permission failed", err.Error())
 		return
 	}
 	tflog.Info(ctx, "Step 2 completed: vpcep-service permission added", map[string]any{
-		"service_id": vpcepServiceId,
-		"domain_id":  plan.M1PlusDomainId,
+		"service_id":  vpcepServiceId,
+		"permissions": len(plan.M3VpcepServicePermissions),
 	})
 
 	// Step 3.1 - 在 M1+ 侧创建 vpcep-endpoint
@@ -199,7 +239,6 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("wait for vpcep-endpoint ready failed", err.Error())
 		return
 	}
-	plan.VpcepEndpointIp = types.StringValue(clientIp)
 	tflog.Info(ctx, "Step 3.2 completed: vpcep-endpoint is ready", map[string]any{
 		"client_id": vpcepEndpointId,
 		"ip":        clientIp,
@@ -219,6 +258,17 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 	plan.LbmDnsRecordId = types.StringValue(dnsRecordId)
+	lbmDnsRecordValues, recordValueDiags := buildLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+		{
+			RecordType:  "A",
+			RecordValue: clientIp,
+		},
+	})
+	resp.Diagnostics.Append(recordValueDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.LbmDnsRecordValues = lbmDnsRecordValues
 	tflog.Info(ctx, "Step 4.2 completed: lbm-dns record created", map[string]any{
 		"dns_record_id": dnsRecordId,
 	})
@@ -231,6 +281,7 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		"client_ip":     clientIp,
 		"dns_record_id": dnsRecordId,
 	})
+	normalizeM1ToM3ListState(&plan)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -268,11 +319,6 @@ func (r *netConnectM1ToM3Resource) createM3VpcepService(ctx context.Context, pla
 			IpVersion:       &ipVersion,
 		},
 	}
-	if !plan.M3VpcepServiceName.IsNull() {
-		serviceName := plan.M3VpcepServiceName.ValueString()
-		createReq.Body.ServiceName = &serviceName
-	}
-
 	requestJson, err := json.Marshal(createReq.Body)
 	if err != nil {
 		tflog.Warn(ctx, "Failed to marshal vpcep-service request", map[string]any{
@@ -674,25 +720,26 @@ func (r *netConnectM1ToM3Resource) waitForVpcepServiceReady(ctx context.Context,
 	}
 }
 
-// addVpcepServicePermission 为 vpcep-service 添加白名单权限。
-func (r *netConnectM1ToM3Resource) addVpcepServicePermission(ctx context.Context, serviceId, domainId string) error {
-	permission := fmt.Sprintf("iam:domain::%s", domainId)
-
+// addVpcepServicePermissions 为 vpcep-service 添加白名单权限。
+func (r *netConnectM1ToM3Resource) addVpcepServicePermissions(ctx context.Context, serviceId string,
+	permissions []vpcepServicePermissionBlock) error {
+	addPermissions := make([]model.EpsAddPermissionRequest, len(permissions))
+	for i := range permissions {
+		addPermissions[i] = model.EpsAddPermissionRequest{
+			Permission:  permissions[i].Permission,
+			Description: "Allow access from configured permission",
+		}
+	}
 	req := &model.BatchAddEndpointServicePermissionsRequest{
 		VpcEndpointServiceId: serviceId,
 		Body: &model.BatchAddEndpointServicePermissionsRequestBody{
-			Permissions: []model.EpsAddPermissionRequest{
-				{
-					Permission:  permission,
-					Description: "Allow access from M1+ domain",
-				},
-			},
+			Permissions: addPermissions,
 		},
 	}
 
 	tflog.Debug(ctx, "Adding vpcep-service permission", map[string]any{
-		"service_id": serviceId,
-		"domain_id":  domainId,
+		"service_id":  serviceId,
+		"permissions": len(permissions),
 	})
 
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
@@ -709,16 +756,16 @@ func (r *netConnectM1ToM3Resource) addVpcepServicePermission(ctx context.Context
 	}
 
 	tflog.Info(ctx, "Vpcep-service permission added", map[string]any{
-		"service_id": serviceId,
-		"domain_id":  domainId,
+		"service_id":  serviceId,
+		"permissions": len(permissions),
 	})
 	return nil
 }
 
 // Read 逻辑（Partial Repair 策略）：
-// - 查询所有子资源的存在性（VpcepService、VpcepEndpoint、LbmDnsRecord）
+// - 查询所有子资源的存在性并回填远端真实属性（VpcepService、VpcepEndpoint、LbmDnsRecord）
 // - 若某个子资源返回 404，则仅将其 Computed ID 字段置为 null（不调用 RemoveResource）
-// - Input 属性保留在 State 中（Plan 会保留原始值），供 Update 阶段使用进行修复重建
+// - Input 属性仅在远端返回真实值且语义一致时回填，供 Plan 阶段检测属性漂移
 // - 若所有子资源均不存在，则调用 RemoveResource
 func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Read started")
@@ -731,7 +778,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	// 验证 vpcep-service 是否仍存在
 	if !state.VpcepServiceId.IsNull() {
 		getReq := &model.ListServiceDetailsRequest{VpcEndpointServiceId: state.VpcepServiceId.ValueString()}
-		_, err := r.m3VpcepClient.ListServiceDetails(getReq)
+		serviceResp, err := r.m3VpcepClient.ListServiceDetails(getReq)
 		if err != nil {
 			if utils.IsHuaweiCloudNotFoundError(err) {
 				tflog.Info(ctx, "Vpcep-service not found, marking as null (Partial Repair)", map[string]any{
@@ -742,6 +789,12 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 				resp.Diagnostics.AddError("query vpcep-service failed", err.Error())
 				return
 			}
+		} else {
+			syncVpcepServiceState(&state, serviceResp)
+			if err := r.syncVpcepServicePermissionState(ctx, &state, state.VpcepServiceId.ValueString()); err != nil {
+				resp.Diagnostics.AddError("query vpcep-service permission failed", err.Error())
+				return
+			}
 		}
 	}
 
@@ -750,18 +803,19 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		getReq := &model.ListEndpointInfoDetailsRequest{
 			VpcEndpointId: state.VpcepEndpointId.ValueString(),
 		}
-		_, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
+		endpointResp, err := r.m1PlusVpcepClient.ListEndpointInfoDetails(getReq)
 		if err != nil {
 			if utils.IsHuaweiCloudNotFoundError(err) {
 				tflog.Info(ctx, "Vpcep-endpoint not found, marking as null (Partial Repair)", map[string]any{
 					"endpoint_id": state.VpcepEndpointId.ValueString(),
 				})
 				state.VpcepEndpointId = types.StringNull()
-				state.VpcepEndpointIp = types.StringNull()
 			} else {
 				resp.Diagnostics.AddError("query vpcep-endpoint failed", err.Error())
 				return
 			}
+		} else {
+			syncVpcepEndpointState(&state, endpointResp)
 		}
 	}
 
@@ -774,6 +828,10 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		if err != nil {
 			resp.Diagnostics.AddError("query lbm-dns record failed", err.Error())
 			return
+		} else if dnsResp.HTTPStatusCode < 200 || dnsResp.HTTPStatusCode >= 300 {
+			resp.Diagnostics.AddError("query lbm-dns record failed",
+				fmt.Sprintf("http status is %d", dnsResp.HTTPStatusCode))
+			return
 		} else if lbmdnsclient.IsIntranetDnsDomainNotFound(dnsResp) {
 			tflog.Info(ctx, "lbm-dns record not found, marking as null (Partial Repair)", map[string]any{
 				"dns_record_id": state.LbmDnsRecordId.ValueString(),
@@ -782,12 +840,17 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 				"msg":           dnsResp.Body.ErrMsg,
 			})
 			state.LbmDnsRecordId = types.StringNull()
+			state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+		} else {
+			resp.Diagnostics.Append(syncLbmDnsState(&state, dnsResp)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
 		}
 	}
 
 	// 全部子资源均不存在时，移除整个 resource
-	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() &&
-		state.VpcepEndpointIp.IsNull() && state.LbmDnsRecordId.IsNull()
+	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() && state.LbmDnsRecordId.IsNull()
 	if allRemoved {
 		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
@@ -795,6 +858,185 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// syncVpcepServiceState 将 VPCEP-Service 远端真实属性同步到 Terraform state。
+func syncVpcepServiceState(state *netConnectM1ToM3Model, serviceResp *model.ListServiceDetailsResponse) {
+	if serviceResp.Id != nil {
+		state.VpcepServiceId = types.StringValue(*serviceResp.Id)
+	}
+	if serviceResp.VpcId != nil {
+		state.M3VpcId = *serviceResp.VpcId
+	}
+	if serviceResp.PortId != nil {
+		state.M3PortId = *serviceResp.PortId
+	}
+	if serviceResp.ServerType != nil {
+		state.M3ServerType = *serviceResp.ServerType
+	}
+	if serviceResp.Ports != nil {
+		state.M3VpcepServicePorts = normalizeVpcepServicePortsFromRemote(*serviceResp.Ports)
+	}
+}
+
+// normalizeM1ToM3ListState 稳定化 Create 首次写入 state 的列表顺序。
+func normalizeM1ToM3ListState(state *netConnectM1ToM3Model) {
+	state.M3VpcepServicePorts = normalizeVpcepServicePortBlocks(state.M3VpcepServicePorts)
+	state.M3VpcepServicePermissions = normalizeVpcepServicePermissionBlocks(state.M3VpcepServicePermissions)
+}
+
+// normalizeVpcepServicePortsFromRemote 提取 TCP 端口并稳定排序，避免远端返回顺序造成无意义 diff。
+func normalizeVpcepServicePortsFromRemote(ports []model.PortList) []vpcepServicePortBlock {
+	tcpPorts := make([]vpcepServicePortBlock, 0, len(ports))
+	for _, port := range ports {
+		if port.ClientPort == nil || port.ServerPort == nil || port.Protocol == nil ||
+			port.Protocol.Value() != "TCP" {
+			continue
+		}
+		tcpPorts = append(tcpPorts, vpcepServicePortBlock{
+			ClientPort: *port.ClientPort,
+			ServerPort: *port.ServerPort,
+		})
+	}
+	return normalizeVpcepServicePortBlocks(tcpPorts)
+}
+
+// normalizeVpcepServicePortBlocks 稳定化 VPCEP-Service 端口列表顺序。
+func normalizeVpcepServicePortBlocks(ports []vpcepServicePortBlock) []vpcepServicePortBlock {
+	normalizedPorts := append([]vpcepServicePortBlock(nil), ports...)
+	sort.Slice(normalizedPorts, func(i, j int) bool {
+		if normalizedPorts[i].ClientPort == normalizedPorts[j].ClientPort {
+			return normalizedPorts[i].ServerPort < normalizedPorts[j].ServerPort
+		}
+		return normalizedPorts[i].ClientPort < normalizedPorts[j].ClientPort
+	})
+	return normalizedPorts
+}
+
+// syncVpcepEndpointState 将 VPCEP-Endpoint 远端真实属性同步到 Terraform state。
+func syncVpcepEndpointState(state *netConnectM1ToM3Model, endpointResp *model.ListEndpointInfoDetailsResponse) {
+	if endpointResp.Id != nil {
+		state.VpcepEndpointId = types.StringValue(*endpointResp.Id)
+	}
+	if endpointResp.VpcId != nil {
+		state.M1PlusVpcId = *endpointResp.VpcId
+	}
+	if endpointResp.SubnetId != nil {
+		state.M1PlusSubnetId = *endpointResp.SubnetId
+	}
+}
+
+// syncLbmDnsState 将 lbm-dns 查询结果同步到 Terraform state。
+func syncLbmDnsState(state *netConnectM1ToM3Model,
+	dnsResp *lbmdnsclient.GetIntranetDnsDomainResponse) diag.Diagnostics {
+	if dnsResp == nil || dnsResp.Body.Data == nil {
+		return nil
+	}
+
+	detail := dnsResp.Body.Data
+	state.RegionCode = detail.RegionCode
+	state.LbmDnsServiceName = detail.ServiceName
+	state.DnsDomain = detail.HostRecord
+	state.DnsDomainSuffix = detail.DomainSuffix
+	recordValues, diags := buildLbmDnsRecordValues(normalizeLbmDnsRecordValuesFromRemote(detail.RecordValues))
+	state.LbmDnsRecordValues = recordValues
+	return diags
+}
+
+// normalizeLbmDnsRecordValuesFromRemote 将远端 lbm-dns 记录值转换为 state 结构并稳定排序。
+func normalizeLbmDnsRecordValuesFromRemote(values []lbmdnsclient.IntranetDnsRecordValue) []lbmDnsRecordValueBlock {
+	recordValues := make([]lbmDnsRecordValueBlock, 0, len(values))
+	for _, value := range values {
+		recordValues = append(recordValues, lbmDnsRecordValueBlock{
+			RecordType:  value.RecordType,
+			RecordValue: value.RecordValue,
+		})
+	}
+	return normalizeLbmDnsRecordValueBlocks(recordValues)
+}
+
+// buildLbmDnsRecordValues 将 lbm-dns 记录值转换为 Terraform list value。
+func buildLbmDnsRecordValues(values []lbmDnsRecordValueBlock) (types.List, diag.Diagnostics) {
+	normalizedValues := normalizeLbmDnsRecordValueBlocks(values)
+	elements := make([]attr.Value, 0, len(normalizedValues))
+	var diagnostics diag.Diagnostics
+	for _, value := range normalizedValues {
+		objectValue, diags := types.ObjectValue(lbmDnsRecordValueAttrTypes, map[string]attr.Value{
+			"record_type":  types.StringValue(value.RecordType),
+			"record_value": types.StringValue(value.RecordValue),
+		})
+		diagnostics.Append(diags...)
+		if diagnostics.HasError() {
+			return types.ListUnknown(lbmDnsRecordValueObjectType), diagnostics
+		}
+		elements = append(elements, objectValue)
+	}
+
+	listValue, diags := types.ListValue(lbmDnsRecordValueObjectType, elements)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return types.ListUnknown(lbmDnsRecordValueObjectType), diagnostics
+	}
+	return listValue, diagnostics
+}
+
+// normalizeLbmDnsRecordValueBlocks 稳定化 lbm-dns 记录值顺序，避免无意义 diff。
+func normalizeLbmDnsRecordValueBlocks(values []lbmDnsRecordValueBlock) []lbmDnsRecordValueBlock {
+	normalizedValues := append([]lbmDnsRecordValueBlock(nil), values...)
+	sort.Slice(normalizedValues, func(i, j int) bool {
+		if normalizedValues[i].RecordType == normalizedValues[j].RecordType {
+			return normalizedValues[i].RecordValue < normalizedValues[j].RecordValue
+		}
+		return normalizedValues[i].RecordType < normalizedValues[j].RecordType
+	})
+	return normalizedValues
+}
+
+// syncVpcepServicePermissionState 查询并同步 VPCEP-Service 的权限列表。
+func (r *netConnectM1ToM3Resource) syncVpcepServicePermissionState(ctx context.Context, state *netConnectM1ToM3Model,
+	serviceId string) error {
+	limit := int32(500)
+	getReq := &model.ListServicePermissionsDetailsRequest{
+		VpcEndpointServiceId: serviceId,
+		Limit:                &limit,
+	}
+
+	getResp, err := r.m3VpcepClient.ListServicePermissionsDetails(getReq)
+	if err != nil {
+		return err
+	}
+	state.M3VpcepServicePermissions = normalizeVpcepServicePermissionsFromRemote(getResp.Permissions)
+	tflog.Debug(ctx, "Vpcep-service permissions synced", map[string]any{
+		"service_id":  serviceId,
+		"permissions": len(state.M3VpcepServicePermissions),
+	})
+	return nil
+}
+
+// normalizeVpcepServicePermissionsFromRemote 提取远端权限字符串并稳定排序。
+func normalizeVpcepServicePermissionsFromRemote(permissions *[]model.PermissionObject) []vpcepServicePermissionBlock {
+	if permissions == nil {
+		return nil
+	}
+	permissionBlocks := make([]vpcepServicePermissionBlock, 0, len(*permissions))
+	for _, permission := range *permissions {
+		if permission.Permission == nil {
+			continue
+		}
+		permissionBlocks = append(permissionBlocks, vpcepServicePermissionBlock{
+			Permission: *permission.Permission,
+		})
+	}
+	return normalizeVpcepServicePermissionBlocks(permissionBlocks)
+}
+
+// normalizeVpcepServicePermissionBlocks 稳定化 VPCEP-Service 权限列表顺序。
+func normalizeVpcepServicePermissionBlocks(permissions []vpcepServicePermissionBlock) []vpcepServicePermissionBlock {
+	normalizedPermissions := append([]vpcepServicePermissionBlock(nil), permissions...)
+	sort.Slice(normalizedPermissions, func(i, j int) bool {
+		return normalizedPermissions[i].Permission < normalizedPermissions[j].Permission
+	})
+	return normalizedPermissions
 }
 
 func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,

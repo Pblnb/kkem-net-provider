@@ -18,12 +18,12 @@ const (
 // CreateIntranetDnsDomain 发送创建 lbm-dns 记录的 HTTP 请求。
 func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
 	regionCode, serviceName, hostRecord, domainSuffix, ip string) (*CreateIntranetDnsDomainResponse, error) {
-	reqBody := &intranetDnsDomainResource{
+	reqBody := &IntranetDnsDomainResource{
 		RegionCode:   regionCode,
 		ServiceName:  serviceName,
 		HostRecord:   hostRecord,
 		DomainSuffix: domainSuffix,
-		RecordValues: []recordValue{
+		RecordValues: []IntranetDnsRecordValue{
 			{
 				RecordType:  recordTypeA,
 				RecordValue: ip,
