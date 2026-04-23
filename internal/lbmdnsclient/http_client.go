@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	actionPost = "POST"
-	actionGet  = "GET"
+	actionPost   = "POST"
+	actionGet    = "GET"
+	actionDelete = "DELETE"
 )
 
 // Client lbm-dns 客户端，封装 HTTP 调用与异步任务轮询

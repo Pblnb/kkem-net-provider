@@ -7,7 +7,7 @@ package lbmdnsclient
 const (
 	pathCreateIntranetDnsDomain        = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet`
 	pathGetIntranetDnsDomainTaskStatus = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/result/%s`
-	pathGetIntranetDnsDomain           = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/%s`
+	pathIntranetDnsDomainResource      = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/%s`
 )
 
 const (
@@ -60,13 +60,21 @@ type GetIntranetDnsDomainResponse struct {
 	HTTPStatusCode int
 }
 
-// IsNotFound checks lbm-dns not-found responses.
-func (resp *GetIntranetDnsDomainResponse) IsNotFound() bool {
-	if resp == nil {
-		return false
-	}
-	// lbm-dns 响应体中的 6702 代码表示资源不存在，而不是 404 HTTP 状态码
-	return resp.Body.Code == StatusCodeResourceNotFound
+// DeleteIntranetDnsDomainResponseBody 删除域名记录的响应体。
+type DeleteIntranetDnsDomainResponseBody struct {
+	baseResponse
+	TaskId string `json:"data,omitempty"`
+}
+
+// DeleteIntranetDnsDomainResponse 删除域名记录响应，包含响应体和 HTTP 状态码。
+type DeleteIntranetDnsDomainResponse struct {
+	Body           DeleteIntranetDnsDomainResponseBody
+	HTTPStatusCode int
+}
+
+// IsNotFound checks lbm-dns not-found response code.
+func IsNotFound(code int) bool {
+	return code == StatusCodeResourceNotFound
 }
 
 type domainStatus struct {
