@@ -12,6 +12,7 @@ const (
 
 const (
 	StatusCodeSuccess          = 0
+	StatusCodeNoChanges        = 101
 	StatusCodeResourceNotFound = 6702
 	TaskStatusSuccess          = "success"
 	TaskStatusFailed           = "failed"
@@ -72,6 +73,18 @@ type DeleteIntranetDnsDomainResponse struct {
 	HTTPStatusCode int
 }
 
+// UpdateIntranetDnsDomainResponseBody 更新域名记录的响应体。
+type UpdateIntranetDnsDomainResponseBody struct {
+	baseResponse
+	TaskId string `json:"data,omitempty"`
+}
+
+// UpdateIntranetDnsDomainResponse 更新域名记录响应，包含响应体和 HTTP 状态码。
+type UpdateIntranetDnsDomainResponse struct {
+	Body           UpdateIntranetDnsDomainResponseBody
+	HTTPStatusCode int
+}
+
 // IsNotFound checks lbm-dns not-found response code.
 func IsNotFound(code int) bool {
 	return code == StatusCodeResourceNotFound
@@ -89,6 +102,11 @@ type IntranetDnsDomainResource struct {
 	ServiceName  string                   `json:"serviceName" required:"true"`
 	HostRecord   string                   `json:"hostRecord" required:"true"`
 	DomainSuffix string                   `json:"domainSuffix" required:"true"`
+	RecordValues []IntranetDnsRecordValue `json:"recordValues" required:"true"`
+}
+
+// IntranetDnsDomainRecordValues describes an lbm-dns record values update.
+type IntranetDnsDomainRecordValues struct {
 	RecordValues []IntranetDnsRecordValue `json:"recordValues" required:"true"`
 }
 

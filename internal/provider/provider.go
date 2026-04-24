@@ -45,7 +45,7 @@ type clients struct {
 	m1PlusVpcepClient *vpcep.VpcepClient
 	m3VpcepClient     *vpcep.VpcepClient
 	m3DnsClient       any                  // TODO: for m3->m1 resource
-	m3LbmDnsClient    *lbmdnsclient.Client // for m1->m3 resource lbm-dns
+	lbmDnsClient      *lbmdnsclient.Client // for m1->m3 resource lbm-dns
 }
 
 type KkemProvider struct {
@@ -185,12 +185,12 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	// 初始化 lbm-dns Client（用于 m1->m3 资源）
-	m3LbmDnsClient := lbmdnsclient.NewClient(data.LbmDnsEndpoint, data.XOpenToken)
+	lbmDnsClient := lbmdnsclient.NewClient(data.LbmDnsEndpoint, data.XOpenToken)
 
 	clients := &clients{
 		m1PlusVpcepClient: m1PlusVpcepClient,
 		m3VpcepClient:     m3VpcepClient,
-		m3LbmDnsClient:    m3LbmDnsClient,
+		lbmDnsClient:      lbmDnsClient,
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]any{

@@ -19,6 +19,7 @@ import (
 const (
 	actionPost   = "POST"
 	actionGet    = "GET"
+	actionPut    = "PUT"
 	actionDelete = "DELETE"
 )
 

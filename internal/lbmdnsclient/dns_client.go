@@ -106,6 +106,43 @@ func (c *Client) GetIntranetDnsDomain(ctx context.Context, resourceId string) (*
 	return &GetIntranetDnsDomainResponse{Body: body, HTTPStatusCode: statusCode}, nil
 }
 
+// UpdateIntranetDnsDomain 发送更新 lbm-dns 记录值的 HTTP 请求。
+func (c *Client) UpdateIntranetDnsDomain(ctx context.Context,
+	resourceId, ip string) (*UpdateIntranetDnsDomainResponse, error) {
+	url := fmt.Sprintf(pathIntranetDnsDomainResource, resourceId)
+	reqBody := &IntranetDnsDomainRecordValues{
+		RecordValues: []IntranetDnsRecordValue{
+			{
+				RecordType:  recordTypeA,
+				RecordValue: ip,
+			},
+		},
+	}
+
+	bodyBytes, marshalErr := json.Marshal(reqBody)
+	if marshalErr != nil {
+		return nil, fmt.Errorf("marshal DNS update request failed: %w", marshalErr)
+	}
+
+	var respBytes []byte
+	var statusCode int
+	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
+		var doErr error
+		respBytes, statusCode, doErr = c.doRequest(ctx, actionPut, url, bytes.NewReader(bodyBytes))
+		return doErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("send update DNS record request failed: %w", err)
+	}
+
+	var body UpdateIntranetDnsDomainResponseBody
+	if unmarshalErr := json.Unmarshal(respBytes, &body); unmarshalErr != nil {
+		return nil, fmt.Errorf("unmarshal DNS update response failed: %w", unmarshalErr)
+	}
+
+	return &UpdateIntranetDnsDomainResponse{Body: body, HTTPStatusCode: statusCode}, nil
+}
+
 // DeleteIntranetDnsDomain 发送删除 lbm-dns 记录的 HTTP 请求。
 func (c *Client) DeleteIntranetDnsDomain(ctx context.Context,
 	resourceId string) (*DeleteIntranetDnsDomainResponse, error) {
