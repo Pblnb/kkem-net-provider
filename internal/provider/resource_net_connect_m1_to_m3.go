@@ -98,6 +98,12 @@ type lbmDnsRecordValueBlock struct {
 	RecordValue string `tfsdk:"record_value"`
 }
 
+type m1ToM3StaleResources struct {
+	dnsRecordId string
+	endpointId  string
+	serviceId   string
+}
+
 func NewNetConnectM1ToM3Resource() resource.Resource {
 	return &netConnectM1ToM3Resource{}
 }
@@ -1390,10 +1396,8 @@ func (r *netConnectM1ToM3Resource) reconcileVpcepServicePermissions(ctx context.
 
 func (r *netConnectM1ToM3Resource) listVpcepServicePermissions(ctx context.Context,
 	serviceId string) (map[string]string, error) {
-	limit := int32(500)
 	getReq := &model.ListServicePermissionsDetailsRequest{
 		VpcEndpointServiceId: serviceId,
-		Limit:                &limit,
 	}
 	var getResp *model.ListServicePermissionsDetailsResponse
 	err := utils.RetryWithBackoff(ctx, 3, time.Second, func() error {
@@ -1475,114 +1479,142 @@ func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 
 	preserveKnownComputedFields(&plan, state)
 
-	var staleDNSRecordId string
-	var staleEndpointId string
-	var staleServiceId string
+	var stale m1ToM3StaleResources
 
+	serviceReplaced, err := r.reconcileM1ToM3Service(ctx, state, &plan, &stale)
+	if err != nil {
+		resp.Diagnostics.AddError("reconcile vpcep-service failed", err.Error())
+		return
+	}
+	if !setM1ToM3UpdateState(ctx, resp, &plan) {
+		return
+	}
+
+	if err := r.reconcileM1ToM3Endpoint(ctx, state, &plan, serviceReplaced, &stale); err != nil {
+		resp.Diagnostics.AddError("reconcile vpcep-endpoint failed", err.Error())
+		return
+	}
+	if !setM1ToM3UpdateState(ctx, resp, &plan) {
+		return
+	}
+
+	diags := r.reconcileM1ToM3Dns(ctx, state, &plan, &stale)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() || !setM1ToM3UpdateState(ctx, resp, &plan) {
+		return
+	}
+
+	r.cleanupStaleM1ToM3Resources(ctx, stale, resp)
+}
+
+func setM1ToM3UpdateState(ctx context.Context, resp *resource.UpdateResponse, plan *netConnectM1ToM3Model) bool {
+	normalizeM1ToM3ListState(plan)
+	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+	return !resp.Diagnostics.HasError()
+}
+
+func (r *netConnectM1ToM3Resource) reconcileM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
+	plan *netConnectM1ToM3Model, stale *m1ToM3StaleResources) (bool, error) {
 	serviceMissing := state.VpcepServiceId.IsNull()
-	serviceReplace := !serviceMissing && serviceRequiresReplacement(state, plan)
-	serviceUpdate := !serviceMissing && !serviceReplace && serviceRequiresInPlaceUpdate(state, plan)
+	serviceReplace := !serviceMissing && serviceRequiresReplacement(state, *plan)
+	serviceUpdate := !serviceMissing && !serviceReplace && serviceRequiresInPlaceUpdate(state, *plan)
 
 	switch {
 	case serviceMissing:
-		serviceId, err := r.createAndWaitVpcepService(ctx, &plan)
+		serviceId, err := r.createAndWaitVpcepService(ctx, plan)
 		if err != nil {
-			resp.Diagnostics.AddError("create vpcep-service failed", err.Error())
-			return
+			return false, err
 		}
 		plan.VpcepServiceId = types.StringValue(serviceId)
 	case serviceReplace:
 		oldServiceId := state.VpcepServiceId.ValueString()
-		serviceId, err := r.createAndWaitVpcepService(ctx, &plan)
+		serviceId, err := r.createAndWaitVpcepService(ctx, plan)
 		if err != nil {
-			resp.Diagnostics.AddError("replace vpcep-service failed", err.Error())
-			return
+			return false, err
 		}
 		plan.VpcepServiceId = types.StringValue(serviceId)
-		staleServiceId = oldServiceId
+		stale.serviceId = oldServiceId
 	case serviceUpdate:
-		if servicePortConfigChanged(state, plan) {
-			if err := r.updateM3VpcepServiceConfig(ctx, state.VpcepServiceId.ValueString(), &plan); err != nil {
-				resp.Diagnostics.AddError("update vpcep-service failed", err.Error())
-				return
-			}
-		}
-		if servicePermissionsChanged(state, plan) {
-			if err := r.reconcileVpcepServicePermissions(ctx, state.VpcepServiceId.ValueString(),
-				plan.M3VpcepServicePermissions); err != nil {
-				resp.Diagnostics.AddError("update vpcep-service permissions failed", err.Error())
-				return
-			}
+		if err := r.updateExistingM1ToM3Service(ctx, state, plan); err != nil {
+			return false, err
 		}
 		plan.VpcepServiceId = state.VpcepServiceId
 	}
-	normalizeM1ToM3ListState(&plan)
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
+	return serviceReplace, nil
+}
+
+func (r *netConnectM1ToM3Resource) updateExistingM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
+	plan *netConnectM1ToM3Model) error {
+	serviceId := state.VpcepServiceId.ValueString()
+	if servicePortConfigChanged(state, *plan) {
+		if err := r.updateM3VpcepServiceConfig(ctx, serviceId, plan); err != nil {
+			return err
+		}
+	}
+	if servicePermissionsChanged(state, *plan) {
+		return r.reconcileVpcepServicePermissions(ctx, serviceId, plan.M3VpcepServicePermissions)
+	}
+	return nil
+}
+
+func (r *netConnectM1ToM3Resource) reconcileM1ToM3Endpoint(ctx context.Context, state netConnectM1ToM3Model,
+	plan *netConnectM1ToM3Model, serviceReplaced bool, stale *m1ToM3StaleResources) error {
+	endpointReplace := shouldReplaceEndpoint(state, *plan, serviceReplaced)
+	if !state.VpcepEndpointId.IsNull() && !endpointReplace {
+		return nil
 	}
 
-	endpointReplace := shouldReplaceEndpoint(state, plan, serviceReplace)
-	if state.VpcepEndpointId.IsNull() || endpointReplace {
-		oldEndpointId := ""
-		if endpointReplace {
-			oldEndpointId = state.VpcepEndpointId.ValueString()
-		}
-		endpointId, endpointIp, err := r.createAndWaitVpcepEndpoint(ctx, &plan, plan.VpcepServiceId.ValueString())
-		if err != nil {
-			resp.Diagnostics.AddError("create vpcep-endpoint failed", err.Error())
-			return
-		}
-		plan.VpcepEndpointId = types.StringValue(endpointId)
-		plan.VpcepEndpointIp = types.StringValue(endpointIp)
-		plan.VpcepEndpointServiceId = plan.VpcepServiceId
-		if oldEndpointId != "" {
-			staleEndpointId = oldEndpointId
-		}
+	oldEndpointId := ""
+	if endpointReplace {
+		oldEndpointId = state.VpcepEndpointId.ValueString()
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
+	endpointId, endpointIp, err := r.createAndWaitVpcepEndpoint(ctx, plan, plan.VpcepServiceId.ValueString())
+	if err != nil {
+		return err
 	}
+	plan.VpcepEndpointId = types.StringValue(endpointId)
+	plan.VpcepEndpointIp = types.StringValue(endpointIp)
+	plan.VpcepEndpointServiceId = plan.VpcepServiceId
+	if oldEndpointId != "" {
+		stale.endpointId = oldEndpointId
+	}
+	return nil
+}
 
-	dnsIdentityChanged := !state.LbmDnsRecordId.IsNull() && dnsIdentityChanged(state, plan)
-	dnsValuesChanged, diags := lbmDnsRecordValueNeedsUpdate(ctx, state.LbmDnsRecordValues, plan.VpcepEndpointIp)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
+func (r *netConnectM1ToM3Resource) reconcileM1ToM3Dns(ctx context.Context, state netConnectM1ToM3Model,
+	plan *netConnectM1ToM3Model, stale *m1ToM3StaleResources) diag.Diagnostics {
+	var diags diag.Diagnostics
+	dnsIdentityChanged := !state.LbmDnsRecordId.IsNull() && dnsIdentityChanged(state, *plan)
+	dnsValuesChanged, valueDiags := lbmDnsRecordValueNeedsUpdate(ctx, state.LbmDnsRecordValues, plan.VpcepEndpointIp)
+	diags.Append(valueDiags...)
+	if diags.HasError() {
+		return diags
 	}
 
 	switch {
 	case state.LbmDnsRecordId.IsNull():
-		if _, err := r.createAndWaitLbmDnsRecord(ctx, &plan, plan.VpcepEndpointIp.ValueString()); err != nil {
-			resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
-			return
+		if _, err := r.createAndWaitLbmDnsRecord(ctx, plan, plan.VpcepEndpointIp.ValueString()); err != nil {
+			diags.AddError("create lbm-dns record failed", err.Error())
 		}
 	case dnsIdentityChanged:
 		oldRecordId := state.LbmDnsRecordId.ValueString()
-		if _, err := r.createAndWaitLbmDnsRecord(ctx, &plan, plan.VpcepEndpointIp.ValueString()); err != nil {
-			resp.Diagnostics.AddError("replace lbm-dns record failed", err.Error())
-			return
+		if _, err := r.createAndWaitLbmDnsRecord(ctx, plan, plan.VpcepEndpointIp.ValueString()); err != nil {
+			diags.AddError("replace lbm-dns record failed", err.Error())
+			return diags
 		}
-		staleDNSRecordId = oldRecordId
+		stale.dnsRecordId = oldRecordId
 	case dnsValuesChanged:
 		if err := r.updateLbmDnsRecordValues(ctx, state.LbmDnsRecordId.ValueString(),
 			plan.VpcepEndpointIp.ValueString()); err != nil {
-			resp.Diagnostics.AddError("update lbm-dns record failed", err.Error())
-			return
+			diags.AddError("update lbm-dns record failed", err.Error())
+			return diags
 		}
 		plan.LbmDnsRecordId = state.LbmDnsRecordId
-		if err := setLbmDnsRecordValues(&plan, plan.VpcepEndpointIp.ValueString()); err != nil {
-			resp.Diagnostics.AddError("sync lbm-dns record values failed", err.Error())
-			return
+		if err := setLbmDnsRecordValues(plan, plan.VpcepEndpointIp.ValueString()); err != nil {
+			diags.AddError("sync lbm-dns record values failed", err.Error())
 		}
 	}
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	r.cleanupStaleM1ToM3Resources(ctx, staleDNSRecordId, staleEndpointId, staleServiceId, resp)
+	return diags
 }
 
 func preserveKnownComputedFields(plan *netConnectM1ToM3Model, state netConnectM1ToM3Model) {
@@ -1693,24 +1725,24 @@ func lbmDnsRecordAValue(ctx context.Context, values types.List) (string, bool, d
 	return "", false, diags
 }
 
-func (r *netConnectM1ToM3Resource) cleanupStaleM1ToM3Resources(ctx context.Context, dnsRecordId, endpointId,
-	serviceId string, resp *resource.UpdateResponse) {
+func (r *netConnectM1ToM3Resource) cleanupStaleM1ToM3Resources(ctx context.Context, stale m1ToM3StaleResources,
+	resp *resource.UpdateResponse) {
 	var warnings []string
-	if dnsRecordId != "" {
-		if err := r.deleteLbmDnsRecord(ctx, dnsRecordId); err != nil {
-			warnings = append(warnings, fmt.Sprintf("delete stale lbm-dns record %s failed: %s", dnsRecordId,
+	if stale.dnsRecordId != "" {
+		if err := r.deleteLbmDnsRecord(ctx, stale.dnsRecordId); err != nil {
+			warnings = append(warnings, fmt.Sprintf("delete stale lbm-dns record %s failed: %s", stale.dnsRecordId,
 				err.Error()))
 		}
 	}
-	if endpointId != "" {
-		if err := r.deleteM1PlusVpcepEndpoint(ctx, endpointId); err != nil {
-			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-endpoint %s failed: %s", endpointId,
+	if stale.endpointId != "" {
+		if err := r.deleteM1PlusVpcepEndpoint(ctx, stale.endpointId); err != nil {
+			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-endpoint %s failed: %s", stale.endpointId,
 				err.Error()))
 		}
 	}
-	if serviceId != "" {
-		if err := r.deleteM3VpcepService(ctx, serviceId); err != nil {
-			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-service %s failed: %s", serviceId,
+	if stale.serviceId != "" {
+		if err := r.deleteM3VpcepService(ctx, stale.serviceId); err != nil {
+			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-service %s failed: %s", stale.serviceId,
 				err.Error()))
 		}
 	}
