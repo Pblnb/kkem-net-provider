@@ -16,19 +16,6 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/utils"
 )
 
-const (
-	vpcepEndpointPollingInterval = 5 * time.Second
-	vpcepEndpointPollingTimeout  = 5 * time.Minute
-	vpcepServicePollingInterval  = 5 * time.Second
-	vpcepServicePollingTimeout   = 5 * time.Minute
-
-	pollingErrTolerance = 3
-
-	VpcepStatusAvailable = "accepted"
-	VpcepStatusFailed    = "failed"
-	VpcepStatusCreating  = "creating"
-)
-
 type VpcepClient interface {
 	CreateEndpoint(req *model.CreateEndpointRequest) (*model.CreateEndpointResponse, error)
 	DeleteEndpoint(request *model.DeleteEndpointRequest) (*model.DeleteEndpointResponse, error)
@@ -134,8 +121,8 @@ func WaitForVpcEndpointReady(
 	client VpcepClient,
 	clientId string,
 ) (string, error) {
-	timeout := time.After(vpcepEndpointPollingTimeout)
-	ticker := time.NewTicker(vpcepEndpointPollingInterval)
+	timeout := time.After(PollingTimeout)
+	ticker := time.NewTicker(PollingInterval)
 	defer ticker.Stop()
 
 	for {
@@ -351,8 +338,8 @@ func WaitForVpcepServiceReady(ctx context.Context,
 	client VpcepClient,
 	serviceId string,
 ) error {
-	timeout := time.After(vpcepServicePollingTimeout)
-	ticker := time.NewTicker(vpcepServicePollingInterval)
+	timeout := time.After(PollingTimeout)
+	ticker := time.NewTicker(PollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0

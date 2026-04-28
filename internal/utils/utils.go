@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	huaweiCloudVpcepNotFoundErrorCode = "EndPoint.0005"
+	huaweiCloudVpcepNotFoundErrorCode     = "EndPoint.0005"
+	huaweiCloudDnsNotFoundErrorCode       = "DNS.0302"
+	huaweiCloudRecordSetNotFoundErrorCode = "DNS.0313"
 )
 
 // BoolPtr returns a pointer to a bool value.
@@ -31,6 +33,20 @@ func IsVpcepNotFoundError(err error) bool {
 	var serviceErr *sdkerr.ServiceResponseError
 	if errors.As(err, &serviceErr) {
 		return serviceErr.StatusCode == http.StatusNotFound && serviceErr.ErrorCode == huaweiCloudVpcepNotFoundErrorCode
+	}
+
+	return false
+}
+
+// IsDnsNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "DNS.0302" 错误代码
+func IsDnsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var serviceErr *sdkerr.ServiceResponseError
+	if errors.As(err, &serviceErr) {
+		return serviceErr.StatusCode == http.StatusNotFound && serviceErr.ErrorCode == huaweiCloudDnsNotFoundErrorCode
 	}
 
 	return false

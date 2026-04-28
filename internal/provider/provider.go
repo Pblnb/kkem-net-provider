@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	dns "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 
 	"huawei.com/kkem/kkem-net-provider/internal/lbmdnsclient"
@@ -44,7 +45,7 @@ type kkemNetProviderModel struct {
 type clients struct {
 	m1PlusVpcepClient *vpcep.VpcepClient
 	m3VpcepClient     *vpcep.VpcepClient
-	m3DnsClient       any                  // TODO: for m3->m1 resource
+	m3DnsClient       *dns.DnsClient
 	lbmDnsClient      *lbmdnsclient.Client // for m1->m3 resource lbm-dns
 }
 
@@ -127,13 +128,18 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 	}
 }
 
-func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
+func (p *KkemProvider) buildVpcepClient(ctx context.Context,
+	label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
+
+	if ak == "" || sk == "" || projectId == "" || endpoint == "" {
+		return nil, fmt.Errorf("ak, sk, projectId, endpoint must not be empty")
+	}
+
 	credentials, err := basic.NewCredentialsBuilder().
 		WithAk(ak).
 		WithSk(sk).
 		WithProjectId(projectId).
 		SafeBuild()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to init credential with ak/sk: %w", err)
 	}
@@ -142,21 +148,45 @@ func newVpcepClient(ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, err
 		WithCredential(credentials).
 		WithEndpoint(endpoint).
 		SafeBuild()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to init vpcep client with endpoint %s: %w", endpoint, err)
 	}
 
-	return vpcep.NewVpcepClient(hcClient), nil
+	client := vpcep.NewVpcepClient(hcClient)
+
+	tflog.Info(ctx, fmt.Sprintf("%s VPCEP client created", label), map[string]any{
+		"endpoint": endpoint,
+	})
+	return client, nil
 }
 
-func (p *KkemProvider) buildVpcepClient(ctx context.Context,
-	label, ak, sk, projectId, endpoint string) (*vpcep.VpcepClient, error) {
-	client, err := newVpcepClient(ak, sk, projectId, endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("create %s VPCEP client failed: %w", label, err)
+func (p *KkemProvider) buildDnsClient(ctx context.Context,
+	label, ak, sk, projectId, endpoint string) (*dns.DnsClient, error) {
+
+	if ak == "" || sk == "" || projectId == "" || endpoint == "" {
+		return nil, fmt.Errorf("ak, sk, projectId, endpoint must not be empty")
 	}
-	tflog.Info(ctx, fmt.Sprintf("%s VPCEP client created", label), map[string]any{
+
+	credentials, err := basic.NewCredentialsBuilder().
+		WithAk(ak).
+		WithSk(sk).
+		WithProjectId(projectId).
+		SafeBuild()
+	if err != nil {
+		return nil, fmt.Errorf("failed to init credential with ak/sk: %w", err)
+	}
+
+	hcClient, err := core.NewHcHttpClientBuilder().
+		WithCredential(credentials).
+		WithEndpoint(endpoint).
+		SafeBuild()
+	if err != nil {
+		return nil, fmt.Errorf("failed to init dns client with endpoint %s: %w", endpoint, err)
+	}
+
+	client := dns.NewDnsClient(hcClient)
+
+	tflog.Info(ctx, fmt.Sprintf("%s DNS client created", label), map[string]any{
 		"endpoint": endpoint,
 	})
 	return client, nil
@@ -184,12 +214,19 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
+	m3DnsClient, err := p.buildDnsClient(ctx, "M3", data.M3.Ak, data.M3.Sk, data.M3.ProjectId, data.DnsEndpoint)
+	if err != nil {
+		resp.Diagnostics.AddError("create M3 DNS client failed", err.Error())
+		return
+	}
+
 	// 初始化 lbm-dns Client（用于 m1->m3 资源）
 	lbmDnsClient := lbmdnsclient.NewClient(data.LbmDnsEndpoint, data.XOpenToken)
 
 	clients := &clients{
 		m1PlusVpcepClient: m1PlusVpcepClient,
 		m3VpcepClient:     m3VpcepClient,
+		m3DnsClient:       m3DnsClient,
 		lbmDnsClient:      lbmDnsClient,
 	}
 

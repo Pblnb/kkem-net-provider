@@ -7,15 +7,16 @@ package provider
 import (
 	"context"
 	"fmt"
-	"huawei.com/kkem/kkem-net-provider/internal/service"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	dns "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2/model"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 
+	"huawei.com/kkem/kkem-net-provider/internal/service"
 	"huawei.com/kkem/kkem-net-provider/internal/utils"
 )
 
@@ -31,18 +32,14 @@ type createdResource struct {
 
 type netConnectM3ToM1Model struct {
 	//vpc-endpoint相关
-	M3VpcEndpointId       types.String `tfsdk:"m3_vpcep_endpoint_id"`
+	M3VpcEndpointId       types.String `tfsdk:"m3_vpcep_id"`
 	M3VpcID               string       `tfsdk:"m3_vpc_id"`
-	M3VpcEndpointIp       types.String `tfsdk:"m3_vpcep_endpoint_ip"`
-	M3VpcEndpointSubnetId string       `tfsdk:"m3_vpcep_endpoint_subnet_id"`
+	M3VpcEndpointIp       types.String `tfsdk:"m3_vpcep_ip"`
+	M3VpcEndpointSubnetId string       `tfsdk:"m3_vpcep_subnet_id"`
 	SniVpcepServerId      string       `tfsdk:"sni_vpcep_server_id"`
 	//dns相关
-	M3DnsDomain         types.String `tfsdk:"m3_dns_domain"`
-	M3DnsZoneType       types.String `tfsdk:"dns_zone_type"`
-	M3DnsRecordSetsType types.String `tfsdk:"m3_dns_record_sets_type"`
-	M3DnsRecordS        []string     `tfsdk:"m3_dns_records"`
-	M3DnsPrivateZoneId  types.String `tfsdk:"m3_dns_privatezone_id"`
-	M3DnsRecordId       types.String `tfsdk:"m3_dns_recordid"`
+	M3DnsDomainName    string       `tfsdk:"m3_dns_domain_name"`
+	M3DnsPrivateZoneId types.String `tfsdk:"m3_dns_privatezone_id"`
 	//sni-proxy 相关
 	ResourceId    types.String `tfsdk:"sni_proxy_resource_id"`
 	RegionCode    types.String `tfsdk:"region_code"`
@@ -56,18 +53,14 @@ func (r *netConnectM3ToM1Resource) Schema(ctx context.Context, req resource.Sche
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			// --- VPCEP Endpoint 相关 ---
-			"m3_vpcep_endpoint_id":        schema.StringAttribute{Computed: true},
-			"m3_vpc_id":                   schema.StringAttribute{Required: true},
-			"m3_vpcep_endpoint_ip":        schema.StringAttribute{Computed: true},
-			"m3_vpcep_endpoint_subnet_id": schema.StringAttribute{Required: true},
-			"sni_vpcep_server_id":         schema.StringAttribute{Required: true},
+			"m3_vpcep_id":         schema.StringAttribute{Computed: true},
+			"m3_vpc_id":           schema.StringAttribute{Required: true},
+			"m3_vpcep_ip":         schema.StringAttribute{Computed: true},
+			"m3_vpcep_subnet_id":  schema.StringAttribute{Required: true},
+			"sni_vpcep_server_id": schema.StringAttribute{Required: true},
 			// --- DNS 相关 ---
-			"m3_dns_domain":           schema.StringAttribute{Optional: true},
-			"dns_zone_type":           schema.StringAttribute{Required: true},
-			"m3_dns_record_sets_type": schema.StringAttribute{Required: true},
-			"m3_dns_records":          schema.ListAttribute{ElementType: types.StringType, Optional: true},
-			"m3_dns_privatezone_id":   schema.StringAttribute{Optional: true},
-			"m3_dns_recordid":         schema.StringAttribute{Optional: true},
+			"m3_dns_domain_name":    schema.StringAttribute{Optional: true},
+			"m3_dns_privatezone_id": schema.StringAttribute{Computed: true},
 			// --- SNI Proxy 相关 ---
 			"sni_proxy_resource_id": schema.StringAttribute{Optional: true},
 			"region_code":           schema.StringAttribute{Required: true},
@@ -168,11 +161,52 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 		"vpcep_endpoint_id": vpcepEndpointId,
 		"ip":                clientIp,
 	})
+	// Step 3.1 - 创建 Intranet Domain
+	tflog.Info(ctx, "Step 3.1: Creating M3 intranet domain")
 
-	// Step 3 - 创建 Intranet Domain（TODO）
+	domainID, err := service.CreatePrivateZone(ctx, r.clients.m3DnsClient, service.PrivateZoneInput{
+		DomainName: plan.M3DnsDomainName,
+		DomainRouter: dns.Router{
+			RouterId: plan.M3VpcID,
+		},
+	})
+
+	if err != nil {
+		resp.Diagnostics.AddError("create M3 intranet domain failed", err.Error())
+		return
+	}
+
+	created = append(created, createdResource{
+		Type: "intranet_domain",
+		ID:   domainID,
+	})
+
+	// Step 3.2 - 等待 Intranet Domain Ready
+	tflog.Info(ctx, "Step 3.2: Waiting for M3 intranet domain ready")
+
+	err = service.WaitForIntranetDomainReady(ctx, r.clients.m3DnsClient, domainID)
+	if err != nil {
+		resp.Diagnostics.AddError("wait for M3 intranet domain ready failed", err.Error())
+		return
+	}
+
+	tflog.Info(ctx, "Step 3.2 completed", map[string]any{
+		"intranet_domain_name": plan.M3DnsDomainName,
+	})
+
+	// Step 3.3 - 创建 Record Set
+	tflog.Info(ctx, "Step 3.3: Creating M3 intranet domain record set")
+
+	_, err = service.CreateRecordSetWithLine(ctx, r.clients.m3DnsClient, domainID, plan.M3DnsDomainName, clientIp)
+
+	if err != nil {
+		resp.Diagnostics.AddError("create M3 intranet domain record set failed", err.Error())
+		return
+	}
 
 	plan.M3VpcEndpointId = types.StringValue(vpcepEndpointId)
 	plan.M3VpcEndpointIp = types.StringValue(clientIp)
+	plan.M3DnsPrivateZoneId = types.StringValue(domainID)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -184,28 +218,46 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	// 验证 Intranet Domain 是否存在,更新相关state字段（TODO）
-
-	getReq := &model.ListEndpointInfoDetailsRequest{
-		VpcEndpointId: state.M3VpcEndpointId.ValueString(),
+	// 验证 intranet domain 是否存在,更新相关state字段
+	if !state.M3DnsPrivateZoneId.IsNull() {
+		getDomainReq := &dns.ShowPrivateZoneRequest{
+			ZoneId: state.M3DnsPrivateZoneId.ValueString(),
+		}
+		_, err := r.clients.m3DnsClient.ShowPrivateZone(getDomainReq)
+		if err != nil {
+			if utils.IsDnsNotFoundError(err) {
+				tflog.Info(ctx, "intranet domain not found, marking as null", map[string]any{
+					"ZoneId": state.M3DnsPrivateZoneId.ValueString(),
+				})
+				state.M3DnsPrivateZoneId = types.StringNull()
+				state.M3DnsDomainName = ""
+			} else {
+				resp.Diagnostics.AddError("query intranet domain failed", err.Error())
+			}
+		}
 	}
-	_, err := r.clients.m3VpcepClient.ListEndpointInfoDetails(getReq)
-	if err != nil {
-		if utils.IsVpcepNotFoundError(err) {
-			tflog.Info(ctx, "vpc-endpoint not found, marking as null", map[string]any{
-				"endpoint_id": state.M3VpcEndpointId.ValueString(),
-			})
-			state.M3VpcEndpointId = types.StringNull()
-		} else {
-			resp.Diagnostics.AddError("query vpc-endpoint failed", err.Error())
-			return
+
+	if !state.M3VpcEndpointId.IsNull() {
+		getReq := &model.ListEndpointInfoDetailsRequest{
+			VpcEndpointId: state.M3VpcEndpointId.ValueString(),
+		}
+		_, err := r.clients.m3VpcepClient.ListEndpointInfoDetails(getReq)
+		if err != nil {
+			if utils.IsVpcepNotFoundError(err) {
+				tflog.Info(ctx, "vpc-endpoint not found, marking as null", map[string]any{
+					"endpoint_id": state.M3VpcEndpointId.ValueString(),
+				})
+				state.M3VpcEndpointId = types.StringNull()
+			} else {
+				resp.Diagnostics.AddError("query vpc-endpoint failed", err.Error())
+			}
 		}
 	}
 
 	// 验证 sni-proxy 接入状态,更新相关state字段（TODO）
 
-	// 全部子资源均不存在时,移除整个 resource  补充sni-proxy,Intranet Domain资源是否存在的判断（TODO)
-	allRemoved := state.M3VpcEndpointId.IsNull()
+	// 全部子资源均不存在时,移除整个 resource  补充sni-proxy资源是否存在的判断（TODO)
+	allRemoved := state.M3VpcEndpointId.IsNull() && state.M3DnsPrivateZoneId.IsNull()
 	if allRemoved {
 		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
@@ -234,32 +286,48 @@ func (r *netConnectM3ToM1Resource) Delete(ctx context.Context, req resource.Dele
 		return
 	}
 
-	// 验证 Intranet Domain 是否存在（TODO）
-
-	if !state.M3VpcEndpointId.IsNull() {
-		if err := service.DeleteVpcEndpoint(ctx, r.clients.m3VpcepClient, state.M3VpcEndpointId.ValueString()); err != nil {
-			resp.Diagnostics.AddError("delete vpc-endpoint failed", err.Error())
-			return
+	var deleteErr error
+	if !state.M3DnsPrivateZoneId.IsNull() {
+		if err := service.DeletePrivateZone(ctx, r.clients.m3DnsClient, state.M3DnsPrivateZoneId.ValueString()); err != nil {
+			deleteErr = fmt.Errorf("failed to delete intranet domain %s, the vpc endpoint and sni-proxy remain intact: %w",
+				state.M3DnsDomainName, err)
 		}
 	}
+	state.M3DnsPrivateZoneId = types.StringNull()
+	state.M3DnsDomainName = ""
 
+	if !state.M3VpcEndpointId.IsNull() && deleteErr == nil {
+		if err := service.DeleteVpcEndpoint(ctx, r.clients.m3VpcepClient, state.M3VpcEndpointId.ValueString()); err != nil {
+			deleteErr = fmt.Errorf("failed to delete vpc endpoint %s, the sni-proxy remains intact: %w",
+				state.M3VpcEndpointId, err)
+		}
+	}
+	state.M3VpcEndpointId = types.StringNull()
+	state.M3VpcEndpointIp = types.StringNull()
+
+	if deleteErr != nil {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+		resp.Diagnostics.AddError("delete m1-to-m3 network connection failed", deleteErr.Error())
+		return
+	}
 	// 验证 sni-proxy 是否接出（TODO）
 
 	resp.State.RemoveResource(ctx)
-
-	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Delete called")
 }
 
 func (r *netConnectM3ToM1Resource) rollback(ctx context.Context, created []createdResource) []error {
 	var errs []error
 
-	// 反向删除（后创建的先删）domain->vpcep-ednpoint->sni-proxy
+	// 反向删除（后创建的先删）intranet_domain->vpcep-ednpoint->sni-proxy
 	for i := len(created) - 1; i >= 0; i-- {
 		cr := created[i]
 
 		switch cr.Type {
-		case "domain":
-			// TODO: delete domain
+		case "intranet_domain":
+			if err := service.DeletePrivateZone(ctx, r.clients.m3DnsClient, cr.ID); err != nil {
+				errs = append(errs,
+					fmt.Errorf("delete intranet_domain %s failed: %w", cr.ID, err))
+			}
 
 		case "vpcep_endpoint":
 			if err := service.DeleteVpcEndpoint(ctx, r.clients.m3VpcepClient, cr.ID); err != nil {
