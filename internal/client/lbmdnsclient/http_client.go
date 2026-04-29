@@ -16,13 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-const (
-	actionPost   = "POST"
-	actionGet    = "GET"
-	actionPut    = "PUT"
-	actionDelete = "DELETE"
-)
-
 // Client lbm-dns 客户端，封装 HTTP 调用与异步任务轮询
 type Client struct {
 	endpoint   string

@@ -18,7 +18,7 @@ import (
 	dns "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2"
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 
-	"huawei.com/kkem/kkem-net-provider/internal/lbmdnsclient"
+	"huawei.com/kkem/kkem-net-provider/internal/client/lbmdnsclient"
 )
 
 type cloudCredentials struct {
@@ -46,7 +46,7 @@ type clients struct {
 	m1PlusVpcepClient *vpcep.VpcepClient
 	m3VpcepClient     *vpcep.VpcepClient
 	m3DnsClient       *dns.DnsClient
-	lbmDnsClient      *lbmdnsclient.Client // for m1->m3 resource lbm-dns
+	lbmDnsClient      *lbmdnsclient.Client // m1->m3 资源的 lbm-dns 客户端
 }
 
 type KkemProvider struct {

@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package utils
+package service
 
 import (
 	"context"
@@ -19,13 +19,8 @@ const (
 	huaweiCloudRecordSetNotFoundErrorCode = "DNS.0313"
 )
 
-// BoolPtr returns a pointer to a bool value.
-func BoolPtr(b bool) *bool {
-	return &b
-}
-
-// IsVpcepNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "EndPoint.0005" 错误代码
-func IsVpcepNotFoundError(err error) bool {
+// isVpcepNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "EndPoint.0005" 错误代码
+func isVpcepNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -38,24 +33,31 @@ func IsVpcepNotFoundError(err error) bool {
 	return false
 }
 
-// IsDnsNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "DNS.0302" 错误代码
-func IsDnsNotFoundError(err error) bool {
+// isDnsNotFoundError 检查错误是否是华为云 DNS 服务的 not-found 错误。
+func isDnsNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
 
 	var serviceErr *sdkerr.ServiceResponseError
 	if errors.As(err, &serviceErr) {
-		return serviceErr.StatusCode == http.StatusNotFound && serviceErr.ErrorCode == huaweiCloudDnsNotFoundErrorCode
+		return serviceErr.StatusCode == http.StatusNotFound &&
+			(serviceErr.ErrorCode == huaweiCloudDnsNotFoundErrorCode ||
+				serviceErr.ErrorCode == huaweiCloudRecordSetNotFoundErrorCode)
 	}
 
 	return false
 }
 
-// RetryWithBackoff retries the given operation up to maxRetries times with linear backoff.
+// boolPtr returns a pointer to a bool value.
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// retryWithBackoff retries the given operation up to maxRetries times with linear backoff.
 // The wait interval between attempts is baseInterval * (attempt number), starting from 1.
 // If the context is cancelled, it returns ctx.Err() immediately.
-func RetryWithBackoff(ctx context.Context, maxRetries int, baseInterval time.Duration, operation func() error) error {
+func retryWithBackoff(ctx context.Context, maxRetries int, baseInterval time.Duration, operation func() error) error {
 	var err error
 	for i := range maxRetries {
 		err = operation()

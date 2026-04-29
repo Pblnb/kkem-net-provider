@@ -4,6 +4,19 @@
 
 package lbmdnsclient
 
+import (
+	"context"
+)
+
+type LbmDnsClient interface {
+	CreateIntranetDnsDomain(ctx context.Context, regionCode, serviceName, hostRecord,
+		domainSuffix, ip string) (*AsyncTaskResponse, error)
+	GetIntranetDnsDomainTaskStatus(ctx context.Context, taskId string) (*GetIntranetDnsDomainTaskStatusResponse, error)
+	GetIntranetDnsDomain(ctx context.Context, resourceId string) (*GetIntranetDnsDomainResponse, error)
+	UpdateIntranetDnsDomain(ctx context.Context, resourceId, ip string) (*AsyncTaskResponse, error)
+	DeleteIntranetDnsDomain(ctx context.Context, resourceId string) (*AsyncTaskResponse, error)
+}
+
 const (
 	pathCreateIntranetDnsDomain        = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet`
 	pathGetIntranetDnsDomainTaskStatus = `/CloudLBMgmt/external-api/v1/cloud-lb/iac/dns-config/intranet/result/%s`
@@ -25,15 +38,15 @@ type baseResponse struct {
 	ProviderCode string `json:"provider_code"`
 }
 
-// CreateIntranetDnsDomainResponseBody 创建域名记录的响应体。
-type CreateIntranetDnsDomainResponseBody struct {
+// AsyncTaskResponseBody 异步任务响应体，包含任务 ID。
+type AsyncTaskResponseBody struct {
 	baseResponse
 	TaskId string `json:"data,omitempty"`
 }
 
-// CreateIntranetDnsDomainResponse 创建域名记录响应，包含响应体和 HTTP 状态码。
-type CreateIntranetDnsDomainResponse struct {
-	Body           CreateIntranetDnsDomainResponseBody
+// AsyncTaskResponse 异步任务响应，包含响应体和 HTTP 状态码。
+type AsyncTaskResponse struct {
+	Body           AsyncTaskResponseBody
 	HTTPStatusCode int
 }
 
@@ -61,31 +74,7 @@ type GetIntranetDnsDomainResponse struct {
 	HTTPStatusCode int
 }
 
-// DeleteIntranetDnsDomainResponseBody 删除域名记录的响应体。
-type DeleteIntranetDnsDomainResponseBody struct {
-	baseResponse
-	TaskId string `json:"data,omitempty"`
-}
-
-// DeleteIntranetDnsDomainResponse 删除域名记录响应，包含响应体和 HTTP 状态码。
-type DeleteIntranetDnsDomainResponse struct {
-	Body           DeleteIntranetDnsDomainResponseBody
-	HTTPStatusCode int
-}
-
-// UpdateIntranetDnsDomainResponseBody 更新域名记录的响应体。
-type UpdateIntranetDnsDomainResponseBody struct {
-	baseResponse
-	TaskId string `json:"data,omitempty"`
-}
-
-// UpdateIntranetDnsDomainResponse 更新域名记录响应，包含响应体和 HTTP 状态码。
-type UpdateIntranetDnsDomainResponse struct {
-	Body           UpdateIntranetDnsDomainResponseBody
-	HTTPStatusCode int
-}
-
-// IsNotFound checks lbm-dns not-found response code.
+// IsNotFound 检查 lbm-dns 的 not-found 响应码。
 func IsNotFound(code int) bool {
 	return code == StatusCodeResourceNotFound
 }
@@ -96,7 +85,7 @@ type domainStatus struct {
 	Message    string `json:"msg,omitempty"`
 }
 
-// IntranetDnsDomainResource describes an lbm-dns record resource.
+// IntranetDnsDomainResource 描述 lbm-dns 记录资源。
 type IntranetDnsDomainResource struct {
 	RegionCode   string                   `json:"regionCode" required:"true"`
 	ServiceName  string                   `json:"serviceName" required:"true"`
@@ -105,12 +94,12 @@ type IntranetDnsDomainResource struct {
 	RecordValues []IntranetDnsRecordValue `json:"recordValues" required:"true"`
 }
 
-// IntranetDnsDomainRecordValues describes an lbm-dns record values update.
+// IntranetDnsDomainRecordValues 描述 lbm-dns 记录值的更新。
 type IntranetDnsDomainRecordValues struct {
 	RecordValues []IntranetDnsRecordValue `json:"recordValues" required:"true"`
 }
 
-// IntranetDnsRecordValue describes a single lbm-dns record value.
+// IntranetDnsRecordValue 描述单条 lbm-dns 记录值。
 type IntranetDnsRecordValue struct {
 	RecordType  string `json:"recordType" required:"true"`
 	RecordValue string `json:"recordValue" required:"true"`
