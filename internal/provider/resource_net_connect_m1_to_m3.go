@@ -34,9 +34,32 @@ var lbmDnsRecordValueObjectType = types.ObjectType{
 }
 
 type netConnectM1ToM3Resource struct {
-	m1PlusVpcepService *service.VpcepEndpointService
-	m3VpcepService     *service.VpcepService
-	lbmDnsService      *service.LbmDnsService
+	m1PlusVpcepService m1ToM3VpcepEndpointService
+	m3VpcepService     m1ToM3VpcepService
+	lbmDnsService      m1ToM3LbmDnsService
+}
+
+type m1ToM3VpcepEndpointService interface {
+	Create(ctx context.Context, input service.VpcEndpointInput) (string, string, error)
+	Delete(ctx context.Context, endpointId string) error
+	Get(ctx context.Context, endpointId string) (*service.VpcepEndpointOutput, error)
+}
+
+type m1ToM3VpcepService interface {
+	Create(ctx context.Context, input service.VpcepServiceInput) (string, error)
+	Delete(ctx context.Context, serviceId string) error
+	Get(ctx context.Context, serviceId string) (*service.VpcepServiceOutput, error)
+	AddPermissions(ctx context.Context, serviceId string, permissions []service.PermissionInput) error
+	GetPermissions(ctx context.Context, serviceId string) (map[string]string, error)
+	UpdateConfig(ctx context.Context, serviceId string, input service.VpcepServiceInput) error
+	ReconcilePermissions(ctx context.Context, serviceId string, desired []service.PermissionInput) error
+}
+
+type m1ToM3LbmDnsService interface {
+	CreateIntranetDnsDomain(ctx context.Context, input service.CreateLbmDnsInput) (*service.CreateLbmDnsOutput, error)
+	DeleteIntranetDnsDomain(ctx context.Context, recordId string) error
+	UpdateRecordValue(ctx context.Context, recordId, endpointIp string) error
+	GetLbmDnsDetail(ctx context.Context, recordId string) (*service.LbmDnsDetailOutput, error)
 }
 
 type netConnectM1ToM3Model struct {
@@ -508,6 +531,7 @@ func normalizeM1ToM3ListState(state *netConnectM1ToM3Model) {
 	state.M3VpcepServicePermissions = normalizeVpcepServicePermissionBlocks(state.M3VpcepServicePermissions)
 }
 
+// normalizePortPairs 将 service 层端口对转换为 Resource state 端口块，并按 client_port、server_port 排序。
 func normalizePortPairs(pairs []service.PortPair) []vpcepServicePortBlock {
 	blocks := make([]vpcepServicePortBlock, len(pairs))
 	for i, p := range pairs {
@@ -527,8 +551,10 @@ func normalizeVpcepServicePortBlocks(ports []vpcepServicePortBlock) []vpcepServi
 	return normalizedPorts
 }
 
+// buildLbmDnsRecordValues 将 DNS 记录值块排序后转换为 Terraform List state。
 func buildLbmDnsRecordValues(values []lbmDnsRecordValueBlock) (types.List, diag.Diagnostics) {
 	normalizedValues := normalizeLbmDnsRecordValueBlocks(values)
+
 	elements := make([]attr.Value, 0, len(normalizedValues))
 	var diagnostics diag.Diagnostics
 	for _, value := range normalizedValues {
@@ -545,9 +571,11 @@ func buildLbmDnsRecordValues(values []lbmDnsRecordValueBlock) (types.List, diag.
 
 	listValue, diags := types.ListValue(lbmDnsRecordValueObjectType, elements)
 	diagnostics.Append(diags...)
+
 	if diagnostics.HasError() {
 		return types.ListUnknown(lbmDnsRecordValueObjectType), diagnostics
 	}
+
 	return listValue, diagnostics
 }
 
