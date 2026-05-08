@@ -18,10 +18,6 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/service"
 )
 
-const (
-	testVpcepEndpointIp = "10.0.0.8"
-)
-
 func TestNormalizeM1ToM3ListState(t *testing.T) {
 	testCases := []struct {
 		name                string
@@ -145,39 +141,6 @@ func TestNormalizePortPairs(t *testing.T) {
 	}
 }
 
-func TestConvertPorts(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    []vpcepServicePortBlock
-		expected []service.PortPair
-	}{
-		{
-			name: "GIVEN resource port blocks WHEN convertPorts SHOULD keep port values",
-			input: []vpcepServicePortBlock{
-				{ClientPort: 80, ServerPort: 8080},
-				{ClientPort: 443, ServerPort: 8443},
-			},
-			expected: []service.PortPair{
-				{ClientPort: 80, ServerPort: 8080},
-				{ClientPort: 443, ServerPort: 8443},
-			},
-		},
-		{
-			name:     "GIVEN empty resource port blocks WHEN convertPorts SHOULD return empty port pairs",
-			input:    []vpcepServicePortBlock{},
-			expected: []service.PortPair{},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := convertPorts(tc.input)
-
-			assert.Equal(t, tc.expected, actual)
-		})
-	}
-}
-
 func TestNormalizeVpcepServicePortBlocks(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -250,6 +213,101 @@ func TestNormalizeVpcepServicePortBlocks(t *testing.T) {
 	}
 }
 
+func TestBuildLbmDnsRecordValues(t *testing.T) {
+	testCases := []struct {
+		name     string
+		values   []lbmDnsRecordValueBlock
+		expected []lbmDnsRecordValueBlock
+	}{
+		{
+			name: "GIVEN unsorted record values WHEN buildLbmDnsRecordValues SHOULD return normalized Terraform list",
+			values: []lbmDnsRecordValueBlock{
+				{RecordType: "CNAME", RecordValue: "api.example.com"},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+			},
+			expected: []lbmDnsRecordValueBlock{
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "CNAME", RecordValue: "api.example.com"},
+			},
+		},
+		{
+			name:     "GIVEN empty record values WHEN buildLbmDnsRecordValues SHOULD return empty Terraform list",
+			values:   []lbmDnsRecordValueBlock{},
+			expected: []lbmDnsRecordValueBlock{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, diags := buildLbmDnsRecordValues(tc.values)
+
+			if diags.HasError() {
+				t.Fatalf("expected no diagnostics, got %v", diags)
+			}
+			assertRecordValueList(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestNormalizeLbmDnsRecordValueBlocks(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    []lbmDnsRecordValueBlock
+		expected []lbmDnsRecordValueBlock
+	}{
+		{
+			name: "GIVEN unsorted lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD sort by type then value",
+			input: []lbmDnsRecordValueBlock{
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+				{RecordType: "A", RecordValue: "10.0.0.9"},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+			},
+			expected: []lbmDnsRecordValueBlock{
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "A", RecordValue: "10.0.0.9"},
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+			},
+		},
+		{
+			name: "GIVEN sorted lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD keep sorted values",
+			input: []lbmDnsRecordValueBlock{
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+			},
+			expected: []lbmDnsRecordValueBlock{
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+			},
+		},
+		{
+			name: "GIVEN duplicate lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD keep duplicate values",
+			input: []lbmDnsRecordValueBlock{
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+			},
+			expected: []lbmDnsRecordValueBlock{
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				{RecordType: "CNAME", RecordValue: "b.example.com"},
+			},
+		},
+		{
+			name:     "GIVEN empty lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD return empty values",
+			input:    []lbmDnsRecordValueBlock{},
+			expected: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := normalizeLbmDnsRecordValueBlocks(tc.input)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestNormalizeVpcepServicePermissionBlocks(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -307,97 +365,284 @@ func TestNormalizeVpcepServicePermissionBlocks(t *testing.T) {
 	}
 }
 
-func TestNormalizeLbmDnsRecordValueBlocks(t *testing.T) {
+func TestPreserveKnownComputedFields(t *testing.T) {
+	stateValues := mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
+		{RecordType: "A", RecordValue: testVpcepEndpointIp},
+	})
+	knownValues := mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
+		{RecordType: "A", RecordValue: "10.0.0.9"},
+	})
+	state := netConnectM1ToM3Model{
+		VpcepServiceId:         types.StringValue(testVpcepServiceId),
+		VpcepEndpointId:        types.StringValue(testVpcepEndpointId),
+		VpcepEndpointIp:        types.StringValue(testVpcepEndpointIp),
+		VpcepEndpointServiceId: types.StringValue(testVpcepServiceId),
+		LbmDnsRecordId:         types.StringValue(testLbmDnsRecordId),
+		LbmDnsRecordValues:     stateValues,
+	}
+	unknownPlan := netConnectM1ToM3Model{
+		VpcepServiceId:         types.StringUnknown(),
+		VpcepEndpointId:        types.StringUnknown(),
+		VpcepEndpointIp:        types.StringUnknown(),
+		VpcepEndpointServiceId: types.StringUnknown(),
+		LbmDnsRecordId:         types.StringUnknown(),
+		LbmDnsRecordValues:     types.ListUnknown(lbmDnsRecordValueObjectType),
+	}
+	knownPlan := netConnectM1ToM3Model{
+		VpcepServiceId:         types.StringValue("service-2"),
+		VpcepEndpointId:        types.StringValue("endpoint-2"),
+		VpcepEndpointIp:        types.StringValue("10.0.0.9"),
+		VpcepEndpointServiceId: types.StringValue("service-2"),
+		LbmDnsRecordId:         types.StringValue("dns-record-2"),
+		LbmDnsRecordValues:     knownValues,
+	}
+	partialUnknownPlan := knownPlan
+	partialUnknownPlan.VpcepEndpointIp = types.StringUnknown()
+	partialUnknownExpected := knownPlan
+	partialUnknownExpected.VpcepEndpointIp = state.VpcepEndpointIp
+
 	testCases := []struct {
 		name     string
-		input    []lbmDnsRecordValueBlock
-		expected []lbmDnsRecordValueBlock
+		plan     netConnectM1ToM3Model
+		expected netConnectM1ToM3Model
 	}{
 		{
-			name: "GIVEN unsorted lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD sort by type then value",
-			input: []lbmDnsRecordValueBlock{
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-				{RecordType: "A", RecordValue: "10.0.0.9"},
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-			},
-			expected: []lbmDnsRecordValueBlock{
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "A", RecordValue: "10.0.0.9"},
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-			},
+			name:     "GIVEN unknown computed fields WHEN preserveKnownComputedFields SHOULD copy state values",
+			plan:     unknownPlan,
+			expected: state,
 		},
 		{
-			name: "GIVEN sorted lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD keep sorted values",
-			input: []lbmDnsRecordValueBlock{
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-			},
-			expected: []lbmDnsRecordValueBlock{
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-			},
+			name:     "GIVEN partial unknown computed fields WHEN preserveKnownComputedFields SHOULD only copy unknown values",
+			plan:     partialUnknownPlan,
+			expected: partialUnknownExpected,
 		},
 		{
-			name: "GIVEN duplicate lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD keep duplicate values",
-			input: []lbmDnsRecordValueBlock{
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-			},
-			expected: []lbmDnsRecordValueBlock{
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "A", RecordValue: "10.0.0.8"},
-				{RecordType: "CNAME", RecordValue: "b.example.com"},
-			},
-		},
-		{
-			name:     "GIVEN empty lbm dns record values WHEN normalizeLbmDnsRecordValueBlocks SHOULD return empty values",
-			input:    []lbmDnsRecordValueBlock{},
-			expected: nil,
+			name:     "GIVEN known computed fields WHEN preserveKnownComputedFields SHOULD keep plan values",
+			plan:     knownPlan,
+			expected: knownPlan,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := normalizeLbmDnsRecordValueBlocks(tc.input)
+			plan := tc.plan
+
+			preserveKnownComputedFields(&plan, state)
+
+			assert.Equal(t, tc.expected, plan)
+		})
+	}
+}
+
+func TestServiceRequiresReplacement(t *testing.T) {
+	testCases := []struct {
+		name     string
+		plan     netConnectM1ToM3Model
+		expected bool
+	}{
+		{
+			name:     "GIVEN same service identity WHEN serviceRequiresReplacement SHOULD return false",
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN changed m3 vpc WHEN serviceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3VpcId = "vpc-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN changed server type WHEN serviceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3ServerType = "VM"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN empty m3 vpc WHEN serviceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3VpcId = ""
+				return plan
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := serviceRequiresReplacement(buildM1ToM3Model(), tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
 
-func TestBuildLbmDnsRecordValues(t *testing.T) {
+func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 	testCases := []struct {
 		name     string
-		values   []lbmDnsRecordValueBlock
-		expected []lbmDnsRecordValueBlock
+		plan     netConnectM1ToM3Model
+		expected bool
 	}{
 		{
-			name: "GIVEN unsorted record values WHEN buildLbmDnsRecordValues SHOULD return normalized Terraform list",
-			values: []lbmDnsRecordValueBlock{
-				{RecordType: "CNAME", RecordValue: "api.example.com"},
-				{RecordType: "A", RecordValue: testVpcepEndpointIp},
-			},
-			expected: []lbmDnsRecordValueBlock{
-				{RecordType: "A", RecordValue: testVpcepEndpointIp},
-				{RecordType: "CNAME", RecordValue: "api.example.com"},
-			},
+			name:     "GIVEN same service config WHEN serviceRequiresInPlaceUpdate SHOULD return false",
+			plan:     buildM1ToM3Model(),
+			expected: false,
 		},
 		{
-			name:     "GIVEN empty record values WHEN buildLbmDnsRecordValues SHOULD return empty Terraform list",
-			values:   []lbmDnsRecordValueBlock{},
-			expected: []lbmDnsRecordValueBlock{},
+			name: "GIVEN changed service port config WHEN serviceRequiresInPlaceUpdate SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3PortId = "port-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN changed service permissions WHEN serviceRequiresInPlaceUpdate SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-c"}}
+				return plan
+			}(),
+			expected: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, diags := buildLbmDnsRecordValues(tc.values)
+			actual := serviceRequiresInPlaceUpdate(buildM1ToM3Model(), tc.plan)
 
-			if diags.HasError() {
-				t.Fatalf("expected no diagnostics, got %v", diags)
-			}
-			assertRecordValueList(t, tc.expected, actual)
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestServicePortConfigChanged(t *testing.T) {
+	testCases := []struct {
+		name     string
+		plan     netConnectM1ToM3Model
+		expected bool
+	}{
+		{
+			name:     "GIVEN identical ports WHEN servicePortConfigChanged SHOULD return false",
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN same ports in reordered order WHEN servicePortConfigChanged SHOULD return false",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				ports := testVpcepServicePorts()
+				plan.M3VpcepServicePorts = []vpcepServicePortBlock{ports[1], ports[0]}
+				return plan
+			}(),
+			expected: false,
+		},
+		{
+			name: "GIVEN changed port id WHEN servicePortConfigChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3PortId = "port-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN changed ports WHEN servicePortConfigChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3VpcepServicePorts = []vpcepServicePortBlock{{ClientPort: 8080, ServerPort: 8080}}
+				return plan
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := servicePortConfigChanged(buildM1ToM3Model(), tc.plan)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestServicePermissionsChanged(t *testing.T) {
+	testCases := []struct {
+		name     string
+		plan     netConnectM1ToM3Model
+		expected bool
+	}{
+		{
+			name:     "GIVEN identical permissions WHEN servicePermissionsChanged SHOULD return false",
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN same permissions in reordered order WHEN servicePermissionsChanged SHOULD return false",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				permissions := testVpcepServicePermissions()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{permissions[1], permissions[0]}
+				return plan
+			}(),
+			expected: false,
+		},
+		{
+			name: "GIVEN changed permissions WHEN servicePermissionsChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-c"}}
+				return plan
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := servicePermissionsChanged(buildM1ToM3Model(), tc.plan)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestConvertPorts(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    []vpcepServicePortBlock
+		expected []service.PortPair
+	}{
+		{
+			name: "GIVEN resource port blocks WHEN convertPorts SHOULD keep port values",
+			input: []vpcepServicePortBlock{
+				{ClientPort: 80, ServerPort: 8080},
+				{ClientPort: 443, ServerPort: 8443},
+			},
+			expected: []service.PortPair{
+				{ClientPort: 80, ServerPort: 8080},
+				{ClientPort: 443, ServerPort: 8443},
+			},
+		},
+		{
+			name:     "GIVEN empty resource port blocks WHEN convertPorts SHOULD return empty port pairs",
+			input:    []vpcepServicePortBlock{},
+			expected: []service.PortPair{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := convertPorts(tc.input)
+
+			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
@@ -455,6 +700,52 @@ func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
 			assert.True(t, diags.HasError())
 		})
 	}
+}
+
+func buildM1ToM3Model() netConnectM1ToM3Model {
+	return netConnectM1ToM3Model{
+		M3VpcId:                   testM3VpcId,
+		M3ServerType:              testM3ServerType,
+		M3PortId:                  testM3PortId,
+		M3VpcepServicePorts:       testVpcepServicePorts(),
+		M3VpcepServicePermissions: testVpcepServicePermissions(),
+		M1PlusVpcId:               testM1PlusVpcId,
+		M1PlusSubnetId:            testM1PlusSubnetId,
+		DnsDomain:                 testDnsDomain,
+		DnsDomainSuffix:           testDnsDomainSuffix,
+		LbmDnsServiceName:         testLbmDnsServiceName,
+		RegionCode:                testRegionCode,
+		VpcepServiceId:            types.StringValue(testVpcepServiceId),
+		VpcepEndpointId:           types.StringValue(testVpcepEndpointId),
+		VpcepEndpointIp:           types.StringValue(testVpcepEndpointIp),
+		VpcepEndpointServiceId:    types.StringValue(testVpcepServiceId),
+		LbmDnsRecordId:            types.StringValue(testLbmDnsRecordId),
+		LbmDnsRecordValues: testLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+			{RecordType: "A", RecordValue: testVpcepEndpointIp},
+		}),
+	}
+}
+
+// mustLbmDnsRecordValues 用于具体测试用例中构造 record values，并通过断言暴露意外 diagnostics。
+func mustLbmDnsRecordValues(t *testing.T, values []lbmDnsRecordValueBlock) types.List {
+	t.Helper()
+
+	elements := make([]attr.Value, 0, len(values))
+	for _, value := range values {
+		objectValue, diags := types.ObjectValue(lbmDnsRecordValueAttrTypes, map[string]attr.Value{
+			"record_type":  types.StringValue(value.RecordType),
+			"record_value": types.StringValue(value.RecordValue),
+		})
+		if !assert.False(t, diags.HasError(), "expected record value object to build without diagnostics, got %v",
+			diags) {
+			return types.ListUnknown(lbmDnsRecordValueObjectType)
+		}
+		elements = append(elements, objectValue)
+	}
+
+	recordValues, diags := types.ListValue(lbmDnsRecordValueObjectType, elements)
+	assert.False(t, diags.HasError(), "expected record values to build without diagnostics, got %v", diags)
+	return recordValues
 }
 
 func assertRecordValueList(t *testing.T, expected []lbmDnsRecordValueBlock, actual types.List) {
