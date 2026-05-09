@@ -884,8 +884,8 @@ func lbmDnsRecordValueNeedsUpdate(ctx context.Context, values types.List,
 	return !found || currentValue != endpointIp.ValueString(), diags
 }
 
-func lbmDnsRecordAValue(ctx context.Context, values types.List) (string, bool, diag.Diagnostics) {
-	var diags diag.Diagnostics
+func lbmDnsRecordAValue(ctx context.Context, values types.List) (recordValue string, hasARecord bool,
+	diags diag.Diagnostics) {
 	if values.IsNull() || values.IsUnknown() {
 		return "", false, diags
 	}

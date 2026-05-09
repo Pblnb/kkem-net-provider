@@ -614,6 +614,411 @@ func TestServicePermissionsChanged(t *testing.T) {
 	}
 }
 
+func TestEndpointRequiresUpdate(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		state                 netConnectM1ToM3Model
+		plan                  netConnectM1ToM3Model
+		serviceWillBeReplaced bool
+		expected              bool
+	}{
+		{
+			name:     "GIVEN endpoint unchanged WHEN endpointRequiresUpdate SHOULD return false",
+			state:    buildM1ToM3Model(),
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN missing endpoint id WHEN endpointRequiresUpdate SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+		{
+			name:                  "GIVEN service will be replaced WHEN endpointRequiresUpdate SHOULD return true",
+			state:                 buildM1ToM3Model(),
+			plan:                  buildM1ToM3Model(),
+			serviceWillBeReplaced: true,
+			expected:              true,
+		},
+		{
+			name:  "GIVEN endpoint subnet changed WHEN endpointRequiresUpdate SHOULD return true",
+			state: buildM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M1PlusSubnetId = "subnet-2"
+				return plan
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := endpointRequiresUpdate(tc.state, tc.plan, tc.serviceWillBeReplaced)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestShouldReplaceEndpoint(t *testing.T) {
+	testCases := []struct {
+		name            string
+		state           netConnectM1ToM3Model
+		plan            netConnectM1ToM3Model
+		serviceReplaced bool
+		expected        bool
+	}{
+		{
+			name:     "GIVEN endpoint matches plan WHEN shouldReplaceEndpoint SHOULD return false",
+			state:    buildM1ToM3Model(),
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN endpoint id is null WHEN shouldReplaceEndpoint SHOULD return false",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name:            "GIVEN service replaced WHEN shouldReplaceEndpoint SHOULD return true",
+			state:           buildM1ToM3Model(),
+			plan:            buildM1ToM3Model(),
+			serviceReplaced: true,
+			expected:        true,
+		},
+		{
+			name:  "GIVEN endpoint vpc changed WHEN shouldReplaceEndpoint SHOULD return true",
+			state: buildM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M1PlusVpcId = "m1-vpc-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name:  "GIVEN endpoint subnet changed WHEN shouldReplaceEndpoint SHOULD return true",
+			state: buildM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.M1PlusSubnetId = "subnet-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN endpoint service id is null WHEN shouldReplaceEndpoint SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.VpcepEndpointServiceId = types.StringNull()
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+		{
+			name:  "GIVEN plan service id is null WHEN shouldReplaceEndpoint SHOULD return true",
+			state: buildM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.VpcepServiceId = types.StringNull()
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name:  "GIVEN plan service id is unknown WHEN shouldReplaceEndpoint SHOULD return true",
+			state: buildM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.VpcepServiceId = types.StringUnknown()
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN endpoint service id differs from plan service id WHEN shouldReplaceEndpoint SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.VpcepEndpointServiceId = types.StringValue("service-old")
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := shouldReplaceEndpoint(tc.state, tc.plan, tc.serviceReplaced)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestDnsRequiresUpdate(t *testing.T) {
+	ctx := context.Background()
+	testCases := []struct {
+		name                       string
+		state                      netConnectM1ToM3Model
+		plan                       netConnectM1ToM3Model
+		endpointWillBeUpdated      bool
+		expected                   bool
+		expectedDiagSummary        string
+		expectedDiagDetailContains string
+	}{
+		{
+			name:     "GIVEN dns record value matches endpoint IP WHEN dnsRequiresUpdate SHOULD return false",
+			state:    buildM1ToM3Model(),
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN missing dns record id WHEN dnsRequiresUpdate SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.LbmDnsRecordId = types.StringNull()
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+		{
+			name: "GIVEN dns identity changed WHEN dnsRequiresUpdate SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.DnsDomain = "old-api"
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+		{
+			name:                  "GIVEN endpoint will be updated WHEN dnsRequiresUpdate SHOULD return true",
+			state:                 buildM1ToM3Model(),
+			plan:                  buildM1ToM3Model(),
+			endpointWillBeUpdated: true,
+			expected:              true,
+		},
+		{
+			name: "GIVEN dns record value differs from endpoint IP WHEN dnsRequiresUpdate SHOULD return true",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.LbmDnsRecordValues = mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
+					{RecordType: "A", RecordValue: "10.0.0.9"},
+				})
+				return state
+			}(),
+			plan:     buildM1ToM3Model(),
+			expected: true,
+		},
+		{
+			name: "GIVEN invalid dns record values WHEN dnsRequiresUpdate SHOULD return diagnostics",
+			state: func() netConnectM1ToM3Model {
+				state := buildM1ToM3Model()
+				state.LbmDnsRecordValues = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("bad")})
+				return state
+			}(),
+			plan:                       buildM1ToM3Model(),
+			expected:                   false,
+			expectedDiagSummary:        "Value Conversion Error",
+			expectedDiagDetailContains: "cannot reflect tftypes.String into a struct, must be an object",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, diags := dnsRequiresUpdate(ctx, tc.state, tc.plan, tc.endpointWillBeUpdated)
+
+			assert.Equal(t, tc.expected, actual)
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, diags)
+		})
+	}
+}
+
+func TestDnsIdentityChanged(t *testing.T) {
+	testCases := []struct {
+		name     string
+		plan     netConnectM1ToM3Model
+		expected bool
+	}{
+		{
+			name:     "GIVEN same dns identity WHEN dnsIdentityChanged SHOULD return false",
+			plan:     buildM1ToM3Model(),
+			expected: false,
+		},
+		{
+			name: "GIVEN changed region code WHEN dnsIdentityChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.RegionCode = "region-2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN changed dns domain WHEN dnsIdentityChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.DnsDomain = "api2"
+				return plan
+			}(),
+			expected: true,
+		},
+		{
+			name: "GIVEN changed dns domain suffix WHEN dnsIdentityChanged SHOULD return true",
+			plan: func() netConnectM1ToM3Model {
+				plan := buildM1ToM3Model()
+				plan.DnsDomainSuffix = "internal2"
+				return plan
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := dnsIdentityChanged(buildM1ToM3Model(), tc.plan)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestLbmDnsRecordValueNeedsUpdate(t *testing.T) {
+	ctx := context.Background()
+	testCases := []struct {
+		name                       string
+		values                     types.List
+		endpointIp                 types.String
+		expected                   bool
+		expectedDiagSummary        string
+		expectedDiagDetailContains string
+	}{
+		{
+			name: "GIVEN matching A record WHEN lbmDnsRecordValueNeedsUpdate SHOULD return false",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: testVpcepEndpointIp}}),
+			endpointIp: types.StringValue(testVpcepEndpointIp),
+			expected:   false,
+		},
+		{
+			name: "GIVEN endpoint IP is null WHEN lbmDnsRecordValueNeedsUpdate SHOULD return true",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: testVpcepEndpointIp}}),
+			endpointIp: types.StringNull(),
+			expected:   true,
+		},
+		{
+			name: "GIVEN endpoint IP is unknown WHEN lbmDnsRecordValueNeedsUpdate SHOULD return true",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: testVpcepEndpointIp}}),
+			endpointIp: types.StringUnknown(),
+			expected:   true,
+		},
+		{
+			name: "GIVEN no A record WHEN lbmDnsRecordValueNeedsUpdate SHOULD return true",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "CNAME", RecordValue: "api.example.com"}}),
+			endpointIp: types.StringValue(testVpcepEndpointIp),
+			expected:   true,
+		},
+		{
+			name: "GIVEN different A record WHEN lbmDnsRecordValueNeedsUpdate SHOULD return true",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: "10.0.0.9"}}),
+			endpointIp: types.StringValue(testVpcepEndpointIp),
+			expected:   true,
+		},
+		{
+			name:                       "GIVEN invalid record values WHEN lbmDnsRecordValueNeedsUpdate SHOULD return diagnostics",
+			values:                     types.ListValueMust(types.StringType, []attr.Value{types.StringValue("bad")}),
+			endpointIp:                 types.StringValue(testVpcepEndpointIp),
+			expected:                   false,
+			expectedDiagSummary:        "Value Conversion Error",
+			expectedDiagDetailContains: "cannot reflect tftypes.String into a struct, must be an object",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, diags := lbmDnsRecordValueNeedsUpdate(ctx, tc.values, tc.endpointIp)
+
+			assert.Equal(t, tc.expected, actual)
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, diags)
+		})
+	}
+}
+
+func TestLbmDnsRecordAValue(t *testing.T) {
+	ctx := context.Background()
+	testCases := []struct {
+		name                       string
+		values                     types.List
+		expectedValue              string
+		expectedFound              bool
+		expectedDiagSummary        string
+		expectedDiagDetailContains string
+	}{
+		{
+			name: "GIVEN record values with A record WHEN lbmDnsRecordAValue SHOULD return A record value",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: testVpcepEndpointIp}}),
+			expectedValue: testVpcepEndpointIp,
+			expectedFound: true,
+		},
+		{
+			name:          "GIVEN null record values WHEN lbmDnsRecordAValue SHOULD return not found",
+			values:        types.ListNull(lbmDnsRecordValueObjectType),
+			expectedValue: "",
+			expectedFound: false,
+		},
+		{
+			name:          "GIVEN unknown record values WHEN lbmDnsRecordAValue SHOULD return not found",
+			values:        types.ListUnknown(lbmDnsRecordValueObjectType),
+			expectedValue: "",
+			expectedFound: false,
+		},
+		{
+			name: "GIVEN record values without A record WHEN lbmDnsRecordAValue SHOULD return not found",
+			values: mustLbmDnsRecordValues(t,
+				[]lbmDnsRecordValueBlock{{RecordType: "CNAME", RecordValue: "api.example.com"}}),
+			expectedValue: "",
+			expectedFound: false,
+		},
+		{
+			name:                       "GIVEN invalid record values WHEN lbmDnsRecordAValue SHOULD return diagnostics",
+			values:                     types.ListValueMust(types.StringType, []attr.Value{types.StringValue("bad")}),
+			expectedValue:              "",
+			expectedFound:              false,
+			expectedDiagSummary:        "Value Conversion Error",
+			expectedDiagDetailContains: "cannot reflect tftypes.String into a struct, must be an object",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actualValue, actualFound, diags := lbmDnsRecordAValue(ctx, tc.values)
+
+			assert.Equal(t, tc.expectedValue, actualValue)
+			assert.Equal(t, tc.expectedFound, actualFound)
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, diags)
+		})
+	}
+}
+
 func TestConvertPorts(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -647,14 +1052,56 @@ func TestConvertPorts(t *testing.T) {
 	}
 }
 
+func TestConvertPermissions(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    []vpcepServicePermissionBlock
+		expected []service.PermissionInput
+	}{
+		{
+			name:  "GIVEN resource permission blocks WHEN convertPermissions SHOULD keep permission values",
+			input: testVpcepServicePermissions(),
+			expected: []service.PermissionInput{
+				{Permission: "domain-id-a"},
+				{Permission: "domain-id-b"},
+			},
+		},
+		{
+			name:     "GIVEN empty permission blocks WHEN convertPermissions SHOULD return empty permission inputs",
+			input:    []vpcepServicePermissionBlock{},
+			expected: []service.PermissionInput{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := convertPermissions(tc.input)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
 	// types.ObjectValue/ListValue 是薄封装，可能被编译器内联；
 	// 这里 patch 底层构造函数覆盖防御性 diagnostics 分支，避免为测试修改生产代码。
 	testCases := []struct {
-		name        string
-		objectValue func(map[string]attr.Type, map[string]attr.Value) (types.Object, diag.Diagnostics)
-		listValue   func(attr.Type, []attr.Value) (types.List, diag.Diagnostics)
+		name                       string
+		objectValue                func(map[string]attr.Type, map[string]attr.Value) (types.Object, diag.Diagnostics)
+		listValue                  func(attr.Type, []attr.Value) (types.List, diag.Diagnostics)
+		expectedDiagSummary        string
+		expectedDiagDetailContains string
 	}{
+		{
+			name: "GIVEN list value diagnostics WHEN buildLbmDnsRecordValues SHOULD return unknown list and diagnostics",
+			listValue: func(attr.Type, []attr.Value) (types.List, diag.Diagnostics) {
+				var diags diag.Diagnostics
+				diags.AddError("list value failed", "mock list value diagnostics")
+				return types.ListUnknown(lbmDnsRecordValueObjectType), diags
+			},
+			expectedDiagSummary:        "list value failed",
+			expectedDiagDetailContains: "mock list value diagnostics",
+		},
 		{
 			name: "GIVEN object value diagnostics WHEN buildLbmDnsRecordValues SHOULD return unknown list and diagnostics",
 			objectValue: func(map[string]attr.Type, map[string]attr.Value) (types.Object, diag.Diagnostics) {
@@ -666,14 +1113,8 @@ func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
 				t.Fatal("list value should not be called when object value returns diagnostics")
 				return types.ListUnknown(lbmDnsRecordValueObjectType), nil
 			},
-		},
-		{
-			name: "GIVEN list value diagnostics WHEN buildLbmDnsRecordValues SHOULD return unknown list and diagnostics",
-			listValue: func(attr.Type, []attr.Value) (types.List, diag.Diagnostics) {
-				var diags diag.Diagnostics
-				diags.AddError("list value failed", "mock list value diagnostics")
-				return types.ListUnknown(lbmDnsRecordValueObjectType), diags
-			},
+			expectedDiagSummary:        "object value failed",
+			expectedDiagDetailContains: "mock object value diagnostics",
 		},
 	}
 
@@ -697,7 +1138,7 @@ func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
 			})
 
 			assert.True(t, actual.IsUnknown())
-			assert.True(t, diags.HasError())
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, diags)
 		})
 	}
 }
@@ -746,6 +1187,19 @@ func mustLbmDnsRecordValues(t *testing.T, values []lbmDnsRecordValueBlock) types
 	recordValues, diags := types.ListValue(lbmDnsRecordValueObjectType, elements)
 	assert.False(t, diags.HasError(), "expected record values to build without diagnostics, got %v", diags)
 	return recordValues
+}
+
+func assertDiagnostics(t *testing.T, expectedSummary string, expectedDetailContains string, actual diag.Diagnostics) {
+	t.Helper()
+
+	if expectedSummary == "" {
+		assert.Empty(t, actual)
+		return
+	}
+	if assert.Len(t, actual, 1) {
+		assert.Equal(t, expectedSummary, actual[0].Summary())
+		assert.Contains(t, actual[0].Detail(), expectedDetailContains)
+	}
 }
 
 func assertRecordValueList(t *testing.T, expected []lbmDnsRecordValueBlock, actual types.List) {
