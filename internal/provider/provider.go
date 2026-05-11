@@ -19,6 +19,7 @@ import (
 	vpcep "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1"
 
 	"huawei.com/kkem/kkem-net-provider/internal/client/lbmdnsclient"
+	"huawei.com/kkem/kkem-net-provider/internal/client/sniproxyclient"
 )
 
 type cloudCredentials struct {
@@ -32,10 +33,10 @@ type kkemNetProviderModel struct {
 	M1Plus cloudCredentials `tfsdk:"m1_plus"`
 	M3     cloudCredentials `tfsdk:"m3"`
 
-	VpcepEndpoint  string `tfsdk:"vpcep_endpoint"`   // M1+/M3 共用
-	LbmDnsEndpoint string `tfsdk:"lbm_dns_endpoint"` // M1→M3 lbm-dns 服务地址
-	DnsEndpoint    string `tfsdk:"dns_endpoint"`     // M3→M1 标准 DNS 服务地址
-
+	VpcepEndpoint    string `tfsdk:"vpcep_endpoint"`     // M1+/M3 共用
+	LbmDnsEndpoint   string `tfsdk:"lbm_dns_endpoint"`   // M1→M3 lbm-dns 服务地址
+	DnsEndpoint      string `tfsdk:"dns_endpoint"`       // M3→M1 标准 DNS 服务地址
+	SniProxyEndpoint string `tfsdk:"sni_proxy_endpoint"` // M3→M1 Sni-Proxy 服务地址
 	// lbm-dns 认证 Token，接入 RF 后该参数由 Cube 传入，流水线用户不感知该参数
 	// TODO： 这部分参考 LBM 实现，后续接入 RF 后需要关注流水线传参是否有效
 	// 兜底策略：依赖 Cube\Fuxi 的隐私参数能力，用户使用流水线时传入
@@ -47,6 +48,7 @@ type clients struct {
 	m3VpcepClient     *vpcep.VpcepClient
 	m3DnsClient       *dns.DnsClient
 	lbmDnsClient      *lbmdnsclient.Client // m1->m3 资源的 lbm-dns 客户端
+	sniProxyClient    *sniproxyclient.Client
 }
 
 type KkemProvider struct {
@@ -80,6 +82,10 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 			"dns_endpoint": schema.StringAttribute{
 				Required:    true,
 				Description: "DNS 服务 Endpoint（M3→M1 方向 A 记录），如 https://dns.cn-north-7.myhuaweicloud.com",
+			},
+			"sni_proxy_endpoint": schema.StringAttribute{
+				Required:    true,
+				Description: "sni-proxy 服务 Endpoint（M3→M1 方向），如 https://linksniproxy-test.myhuaweicloud.com",
 			},
 			"x_open_token": schema.StringAttribute{
 				Required:    true,
@@ -221,13 +227,16 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	// 初始化 lbm-dns Client（用于 m1->m3 资源）
-	lbmDnsClient := lbmdnsclient.NewClient(data.LbmDnsEndpoint, data.XOpenToken)
+	lbmDnsClient := lbmdnsclient.NewDnsClient(data.LbmDnsEndpoint, data.XOpenToken)
+
+	sniProxyClient := sniproxyclient.NewSniProxyClient(data.SniProxyEndpoint, data.XOpenToken)
 
 	clients := &clients{
 		m1PlusVpcepClient: m1PlusVpcepClient,
 		m3VpcepClient:     m3VpcepClient,
 		m3DnsClient:       m3DnsClient,
 		lbmDnsClient:      lbmDnsClient,
+		sniProxyClient:    sniProxyClient,
 	}
 
 	tflog.Info(ctx, "KkemProvider initialized", map[string]any{

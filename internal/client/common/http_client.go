@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package lbmdnsclient
+package common
 
 import (
 	"context"
@@ -16,15 +16,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Client lbm-dns 客户端，封装 HTTP 调用与异步任务轮询
+// Client 通用 HTTP 客户端
 type Client struct {
 	endpoint   string
 	token      string
 	httpClient *http.Client
 }
 
-// NewClient 创建 LBM DNS Client
-// endpoint: LBM DNS 服务地址（如 https://lbm-app-api.myhuaweicloud.com）
+// NewClient 创建通用 HTTP Client
+// endpoint: 服务地址（如 https://lbm-app-api.myhuaweicloud.com）
 // token: x-open-token 认证令牌
 func NewClient(endpoint, token string) *Client {
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
@@ -44,9 +44,8 @@ func NewClient(endpoint, token string) *Client {
 	}
 }
 
-// doRequest 发起 HTTP 请求，返回响应 body 和 HTTP 状态码
-func (c *Client) doRequest(ctx context.Context, method, path string, reqBody io.Reader) ([]byte, int,
-	error) {
+// DoRequest 发起 HTTP 请求，返回响应 body 和 HTTP 状态码
+func (c *Client) DoRequest(ctx context.Context, method, path string, reqBody io.Reader) ([]byte, int, error) {
 	url := c.endpoint + path
 
 	tflog.Debug(ctx, "Sending HTTP request", map[string]any{
@@ -86,6 +85,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, reqBody io.
 	return body, resp.StatusCode, nil
 }
 
+// MaskToken 对 token 进行脱敏处理
 func maskToken(token string) string {
 	if len(token) <= 8 {
 		return "****"

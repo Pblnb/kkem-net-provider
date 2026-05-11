@@ -10,11 +10,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"huawei.com/kkem/kkem-net-provider/internal/client/common"
 )
 
 const (
 	recordTypeA = "A"
 )
+
+type Client struct {
+	*common.Client
+}
+
+// NewClient 创建 LBM DNS Client
+func NewDnsClient(endpoint, token string) *Client {
+	return &Client{
+		Client: common.NewClient(endpoint, token),
+	}
+}
 
 // CreateIntranetDnsDomain 发送创建 lbm-dns 记录的 HTTP 请求。
 func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
@@ -37,7 +50,7 @@ func (c *Client) CreateIntranetDnsDomain(ctx context.Context,
 		return nil, fmt.Errorf("marshal DNS request failed: %w", marshalErr)
 	}
 
-	respBytes, statusCode, err := c.doRequest(ctx, http.MethodPost, pathCreateIntranetDnsDomain,
+	respBytes, statusCode, err := c.DoRequest(ctx, http.MethodPost, pathCreateIntranetDnsDomain,
 		bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("send create DNS record request failed: %w", err)
@@ -56,7 +69,7 @@ func (c *Client) GetIntranetDnsDomainTaskStatus(ctx context.Context,
 	taskId string) (*GetIntranetDnsDomainTaskStatusResponse, error) {
 	url := fmt.Sprintf(pathGetIntranetDnsDomainTaskStatus, taskId)
 
-	respBytes, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	respBytes, statusCode, err := c.DoRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("query task status failed: %w", err)
 	}
@@ -73,7 +86,7 @@ func (c *Client) GetIntranetDnsDomainTaskStatus(ctx context.Context,
 func (c *Client) GetIntranetDnsDomain(ctx context.Context, resourceId string) (*GetIntranetDnsDomainResponse, error) {
 	url := fmt.Sprintf(pathIntranetDnsDomainResource, resourceId)
 
-	respBytes, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	respBytes, statusCode, err := c.DoRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("query DNS record failed: %w", err)
 	}
@@ -104,7 +117,7 @@ func (c *Client) UpdateIntranetDnsDomain(ctx context.Context,
 		return nil, fmt.Errorf("marshal DNS update request failed: %w", marshalErr)
 	}
 
-	respBytes, statusCode, err := c.doRequest(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
+	respBytes, statusCode, err := c.DoRequest(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("send update DNS record request failed: %w", err)
 	}
@@ -122,7 +135,7 @@ func (c *Client) DeleteIntranetDnsDomain(ctx context.Context,
 	resourceId string) (*AsyncTaskResponse, error) {
 	url := fmt.Sprintf(pathIntranetDnsDomainResource, resourceId)
 
-	respBytes, statusCode, err := c.doRequest(ctx, http.MethodDelete, url, nil)
+	respBytes, statusCode, err := c.DoRequest(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("send delete DNS record request failed: %w", err)
 	}
