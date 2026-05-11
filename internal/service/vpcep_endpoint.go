@@ -137,8 +137,8 @@ func (s *VpcepEndpointService) waitForReady(ctx context.Context, endpointId stri
 				"status":      status,
 			})
 
-			endpointIp, isReady, err := handleEndpointStatus(ctx, endpointId, status, getResp.Ip)
-			if err != nil || isReady {
+			endpointIp, isTerminal, err := handleEndpointStatus(ctx, endpointId, status, getResp.Ip)
+			if err != nil || isTerminal {
 				return endpointIp, err
 			}
 		}
@@ -219,11 +219,11 @@ func (s *VpcepEndpointService) Get(ctx context.Context, endpointId string) (*Vpc
 
 // handleEndpointStatus - 处理 endpoint 状态响应
 func handleEndpointStatus(ctx context.Context, endpointId, status string,
-	endpointIp *string) (readyEndpointIp string, isReady bool, err error) {
+	endpointIp *string) (readyEndpointIp string, isTerminal bool, err error) {
 	switch status {
 	case "accepted":
 		if endpointIp == nil {
-			return "", true, fmt.Errorf("vpcep-endpoint is accepted but has no IP")
+			return "", true, fmt.Errorf("vpcep-endpoint %s is accepted but has no IP", endpointId)
 		}
 		tflog.Info(ctx, "Vpcep-endpoint is ready", map[string]any{
 			"endpoint_id": endpointId,

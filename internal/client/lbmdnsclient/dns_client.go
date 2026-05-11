@@ -134,3 +134,8 @@ func (c *Client) DeleteIntranetDnsDomain(ctx context.Context,
 
 	return &AsyncTaskResponse{Body: body, HTTPStatusCode: statusCode}, nil
 }
+
+// IsNotFound 检查 lbm-dns 的 not-found 响应码。
+func IsNotFound(code int) bool {
+	return code == StatusCodeResourceNotFound
+}

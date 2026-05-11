@@ -74,11 +74,6 @@ type GetIntranetDnsDomainResponse struct {
 	HTTPStatusCode int
 }
 
-// IsNotFound 检查 lbm-dns 的 not-found 响应码。
-func IsNotFound(code int) bool {
-	return code == StatusCodeResourceNotFound
-}
-
 type domainStatus struct {
 	ResourceId string `json:"resourceId,omitempty"`
 	Status     string `json:"status,omitempty"`
