@@ -318,7 +318,7 @@ func (s *LbmDnsService) getLbmDnsRawResponse(ctx context.Context,
 	return resp.Body.Data, nil
 }
 
-// extractLbmDnsRecordValues 从原始数据中提取记录值列表。
+// extractLbmDnsRecordValues 从原始数据中提取记录值列表。需要保证 data 非 nil；nil 入参表示调用方未履行前置校验，会触发 panic。
 func extractLbmDnsRecordValues(data *lbmdnsclient.IntranetDnsDomainResource) []LbmDnsRecordValue {
 	recordValues := make([]LbmDnsRecordValue, len(data.RecordValues))
 	for i, rv := range data.RecordValues {
