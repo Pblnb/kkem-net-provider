@@ -5,90 +5,456 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/agiledragon/gomonkey/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestExtractTcpPortPairs(t *testing.T) {
-	tcpProtocol := model.GetPortListProtocolEnum().TCP
-	nonTcpProtocol := model.PortListProtocol{}
-	clientPort := int32(80)
-	serverPort := int32(8080)
-	anotherClientPort := int32(443)
-	anotherServerPort := int32(8443)
+func TestNewVpcepService(t *testing.T) {
+	fake := &mockVpcepServiceClient{}
 
+	actual := NewVpcepService(fake)
+
+	assert.NotNil(t, actual)
+	assert.Equal(t, fake, actual.client)
+	assert.Equal(t, pollingInterval, actual.pollingInterval)
+	assert.Equal(t, pollingTimeout, actual.pollingTimeout)
+	assert.Equal(t, retryBaseDelay, actual.retryBaseDelay)
+}
+
+func TestVpcepService_Create(t *testing.T) {
 	testCases := []struct {
-		name     string
-		ports    []model.PortList
-		expected []PortPair
+		name                             string
+		ctx                              context.Context
+		service                          *VpcepService
+		makeRequestLogMarshalReturnError bool
+		expected                         string
+		expectedErr                      *string
+		expectedCreateCalls              int
 	}{
 		{
-			name: "GIVEN tcp port list WHEN extractTcpPortPairs SHOULD return port pairs",
-			ports: []model.PortList{
-				{ClientPort: &clientPort, ServerPort: &serverPort, Protocol: &tcpProtocol},
-				{ClientPort: &anotherClientPort, ServerPort: &anotherServerPort, Protocol: &tcpProtocol},
-			},
-			expected: []PortPair{
-				{ClientPort: clientPort, ServerPort: serverPort},
-				{ClientPort: anotherClientPort, ServerPort: anotherServerPort},
-			},
+			name: "GIVEN valid input and ready service WHEN Create SHOULD return service id",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{
+					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
+				},
+				listResults: []vpcepServiceListResult{
+					{resp: buildListServiceDetailsResponse("available")},
+				},
+			}),
+			expected:            testVpcepServiceId,
+			expectedCreateCalls: 1,
 		},
 		{
-			name:     "GIVEN empty port list WHEN extractTcpPortPairs SHOULD return empty list",
-			ports:    []model.PortList{},
-			expected: []PortPair{},
+			name: "GIVEN request log marshal fails WHEN Create SHOULD continue and return service id",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{
+					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
+				},
+				listResults: []vpcepServiceListResult{
+					{resp: buildListServiceDetailsResponse("available")},
+				},
+			}),
+			makeRequestLogMarshalReturnError: true,
+			expected:                         testVpcepServiceId,
+			expectedCreateCalls:              1,
 		},
 		{
-			name: "GIVEN non tcp and incomplete port list WHEN extractTcpPortPairs SHOULD return empty list",
-			ports: []model.PortList{
-				{ClientPort: &clientPort, ServerPort: &serverPort, Protocol: &nonTcpProtocol},
-				{ClientPort: nil, ServerPort: &serverPort, Protocol: &tcpProtocol},
-				{ClientPort: &clientPort, ServerPort: nil, Protocol: &tcpProtocol},
-				{ClientPort: &clientPort, ServerPort: &serverPort, Protocol: nil},
-			},
-			expected: []PortPair{},
+			name: "GIVEN create api fails once then succeeds WHEN Create SHOULD return service id",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{
+					{err: errors.New("create failed")},
+					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
+				},
+				listResults: []vpcepServiceListResult{
+					{resp: buildListServiceDetailsResponse("available")},
+				},
+			}),
+			expected:            testVpcepServiceId,
+			expectedCreateCalls: 2,
+		},
+		{
+			name: "GIVEN create response without id WHEN Create SHOULD return error",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{{resp: &model.CreateEndpointServiceResponse{}}},
+			}),
+			expectedErr:         ptr("createEndpointService response has no ID"),
+			expectedCreateCalls: 1,
+		},
+		{
+			name: "GIVEN canceled context and create api error WHEN Create SHOULD return wrapped context error",
+			ctx:  canceledContext(),
+			service: NewVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{{err: errors.New("create failed")}},
+			}),
+			expectedErr:         ptr("createEndpointService API failed after retries: context canceled"),
+			expectedCreateCalls: 1,
+		},
+		{
+			name: "GIVEN create api keeps failing WHEN Create SHOULD return wrapped create error",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{
+					{err: errors.New("create failed")},
+					{err: errors.New("create failed")},
+					{err: errors.New("create failed")},
+				},
+			}),
+			expectedErr:         ptr("createEndpointService API failed after retries: create failed"),
+			expectedCreateCalls: 3,
+		},
+		{
+			name: "GIVEN wait failed WHEN Create SHOULD return wrapped wait error",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				createResults: []vpcepServiceCreateResult{
+					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
+				},
+				listResults: []vpcepServiceListResult{
+					{resp: buildListServiceDetailsResponse("failed")},
+				},
+			}),
+			expectedErr: ptr(fmt.Sprintf("wait for vpcep-service ready failed: vpcep-service %s status is failed",
+				testVpcepServiceId)),
+			expectedCreateCalls: 1,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := extractTcpPortPairs(tc.ports)
+			ctx := context.Background()
+			if tc.ctx != nil {
+				ctx = tc.ctx
+			}
+			if tc.makeRequestLogMarshalReturnError {
+				patches := gomonkey.ApplyFunc(json.Marshal, func(v any) ([]byte, error) {
+					return nil, errors.New("marshal failed")
+				})
+				defer patches.Reset()
+			}
 
-			assert.Equal(t, tc.expected, actual)
+			actual, err := tc.service.Create(ctx, buildVpcepServiceInput())
+
+			if tc.expectedErr == nil {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expected, actual)
+			} else {
+				assert.Empty(t, actual)
+				assertErrorContains(t, err, tc.expectedErr)
+			}
+			if fake, ok := tc.service.client.(*mockVpcepServiceClient); ok {
+				assert.Equal(t, tc.expectedCreateCalls, fake.createCalls)
+				if fake.createVpcepServiceReq == nil {
+					return
+				}
+				expectedReq := &model.CreateEndpointServiceRequest{
+					Body: &model.CreateEndpointServiceRequestBody{
+						VpcId:           testVpcId,
+						PortId:          testVpcepServicePortId,
+						ServerType:      model.GetCreateEndpointServiceRequestBodyServerTypeEnum().VM,
+						ApprovalEnabled: ptr(false),
+						Ports: []model.PortList{
+							{ClientPort: ptr(int32(80)), ServerPort: ptr(int32(8080)),
+								Protocol: ptr(model.GetPortListProtocolEnum().TCP)},
+						},
+						IpVersion: ptr(model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4),
+					},
+				}
+				assert.Equal(t, expectedReq, fake.createVpcepServiceReq)
+			}
 		})
 	}
 }
 
-func TestGetServerType(t *testing.T) {
+func TestVpcepService_Delete(t *testing.T) {
 	testCases := []struct {
-		name     string
-		input    string
-		expected string
+		name                string
+		ctx                 context.Context
+		service             *VpcepService
+		expectedErr         *string
+		expectedDeleteCalls int
 	}{
 		{
-			name:     "GIVEN vm server type WHEN getServerType SHOULD return vm enum",
-			input:    "VM",
-			expected: "VM",
+			name: "GIVEN delete api succeeds WHEN Delete SHOULD return nil",
+			service: NewVpcepService(&mockVpcepServiceClient{
+				deleteResults: []vpcepServiceDeleteResult{{resp: &model.DeleteEndpointServiceResponse{}}},
+			}),
+			expectedDeleteCalls: 1,
 		},
 		{
-			name:     "GIVEN lb server type WHEN getServerType SHOULD return lb enum",
-			input:    "LB",
-			expected: "LB",
+			name: "GIVEN service not found WHEN Delete SHOULD return nil",
+			service: NewVpcepService(&mockVpcepServiceClient{
+				deleteResults: []vpcepServiceDeleteResult{{err: vpcepNotFoundError}},
+			}),
+			expectedDeleteCalls: 1,
 		},
 		{
-			name:     "GIVEN unknown server type WHEN getServerType SHOULD return lb enum",
-			input:    "UNKNOWN",
-			expected: "LB",
+			name: "GIVEN delete api fails once then succeeds WHEN Delete SHOULD return nil",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				deleteResults: []vpcepServiceDeleteResult{
+					{err: errors.New("delete failed")},
+					{resp: &model.DeleteEndpointServiceResponse{}},
+				},
+			}),
+			expectedDeleteCalls: 2,
+		},
+		{
+			name: "GIVEN canceled context and delete api error WHEN Delete SHOULD return context error",
+			ctx:  canceledContext(),
+			service: NewVpcepService(&mockVpcepServiceClient{
+				deleteResults: []vpcepServiceDeleteResult{{err: errors.New("delete failed")}},
+			}),
+			expectedErr:         ptr("context canceled"),
+			expectedDeleteCalls: 1,
+		},
+		{
+			name: "GIVEN delete api keeps failing WHEN Delete SHOULD return delete error",
+			service: newFastPollingVpcepService(&mockVpcepServiceClient{
+				deleteResults: []vpcepServiceDeleteResult{
+					{err: errors.New("delete failed")},
+					{err: errors.New("delete failed")},
+					{err: errors.New("delete failed")},
+				},
+			}),
+			expectedErr:         ptr("delete failed"),
+			expectedDeleteCalls: 3,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := getServerType(tc.input)
+			ctx := context.Background()
+			if tc.ctx != nil {
+				ctx = tc.ctx
+			}
 
-			assert.Equal(t, tc.expected, actual.Value())
+			err := tc.service.Delete(ctx, testVpcepServiceId)
+
+			if tc.expectedErr == nil {
+				assert.NoError(t, err)
+			} else {
+				assertErrorContains(t, err, tc.expectedErr)
+			}
+			if fake, ok := tc.service.client.(*mockVpcepServiceClient); ok {
+				assert.Equal(t, tc.expectedDeleteCalls, fake.deleteCalls)
+				if fake.deleteVpcepServiceReq != nil {
+					assert.Equal(t, testVpcepServiceId, fake.deleteVpcepServiceReq.VpcEndpointServiceId)
+				}
+			}
 		})
 	}
+}
+
+type mockVpcepServiceClient struct {
+	createVpcepServiceReq *model.CreateEndpointServiceRequest
+	createCalls           int
+	createResults         []vpcepServiceCreateResult
+
+	deleteVpcepServiceReq *model.DeleteEndpointServiceRequest
+	deleteCalls           int
+	deleteResults         []vpcepServiceDeleteResult
+
+	updateVpcepServiceReq *model.UpdateEndpointServiceRequest
+	updateCalls           int
+	updateResults         []vpcepServiceUpdateResult
+
+	listVpcepServiceDetailsReqs []*model.ListServiceDetailsRequest
+	listCalls                   int
+	listResults                 []vpcepServiceListResult
+
+	addPermissionsReq     *model.BatchAddEndpointServicePermissionsRequest
+	addPermissionsCalls   int
+	addPermissionsResults []vpcepServiceAddPermissionsResult
+
+	removePermissionsReq     *model.BatchRemoveEndpointServicePermissionsRequest
+	removePermissionsCalls   int
+	removePermissionsResults []vpcepServiceRemovePermissionsResult
+
+	listPermissionsDetailsReq   *model.ListServicePermissionsDetailsRequest
+	listPermissionsDetailsCalls int
+	listPermissionsResults      []vpcepServiceListPermissionsResult
+}
+
+type vpcepServiceCreateResult struct {
+	resp *model.CreateEndpointServiceResponse
+	err  error
+}
+
+type vpcepServiceDeleteResult struct {
+	resp *model.DeleteEndpointServiceResponse
+	err  error
+}
+
+type vpcepServiceUpdateResult struct {
+	resp *model.UpdateEndpointServiceResponse
+	err  error
+}
+
+type vpcepServiceListResult struct {
+	resp *model.ListServiceDetailsResponse
+	err  error
+}
+
+type vpcepServiceAddPermissionsResult struct {
+	resp *model.BatchAddEndpointServicePermissionsResponse
+	err  error
+}
+
+type vpcepServiceRemovePermissionsResult struct {
+	resp *model.BatchRemoveEndpointServicePermissionsResponse
+	err  error
+}
+
+type vpcepServiceListPermissionsResult struct {
+	resp *model.ListServicePermissionsDetailsResponse
+	err  error
+}
+
+func (f *mockVpcepServiceClient) CreateEndpointService(req *model.CreateEndpointServiceRequest) (
+	*model.CreateEndpointServiceResponse, error) {
+	f.createVpcepServiceReq = req
+	f.createCalls++
+	if len(f.createResults) == 0 {
+		return nil, nil
+	}
+	result := f.createResults[0]
+	f.createResults = f.createResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) DeleteEndpointService(req *model.DeleteEndpointServiceRequest) (
+	*model.DeleteEndpointServiceResponse, error) {
+	f.deleteVpcepServiceReq = req
+	f.deleteCalls++
+	if len(f.deleteResults) == 0 {
+		return nil, nil
+	}
+	result := f.deleteResults[0]
+	f.deleteResults = f.deleteResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) UpdateEndpointService(req *model.UpdateEndpointServiceRequest) (
+	*model.UpdateEndpointServiceResponse, error) {
+	f.updateVpcepServiceReq = req
+	f.updateCalls++
+	if len(f.updateResults) == 0 {
+		return nil, nil
+	}
+	result := f.updateResults[0]
+	f.updateResults = f.updateResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) ListServiceDetails(req *model.ListServiceDetailsRequest) (
+	*model.ListServiceDetailsResponse, error) {
+	f.listVpcepServiceDetailsReqs = append(f.listVpcepServiceDetailsReqs, req)
+	f.listCalls++
+	if len(f.listResults) == 0 {
+		return nil, nil
+	}
+	result := f.listResults[0]
+	f.listResults = f.listResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) BatchAddEndpointServicePermissions(
+	req *model.BatchAddEndpointServicePermissionsRequest) (*model.BatchAddEndpointServicePermissionsResponse, error) {
+	f.addPermissionsReq = req
+	f.addPermissionsCalls++
+	if len(f.addPermissionsResults) == 0 {
+		return nil, nil
+	}
+	result := f.addPermissionsResults[0]
+	f.addPermissionsResults = f.addPermissionsResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) BatchRemoveEndpointServicePermissions(
+	req *model.BatchRemoveEndpointServicePermissionsRequest) (*model.BatchRemoveEndpointServicePermissionsResponse,
+	error) {
+	f.removePermissionsReq = req
+	f.removePermissionsCalls++
+	if len(f.removePermissionsResults) == 0 {
+		return nil, nil
+	}
+	result := f.removePermissionsResults[0]
+	f.removePermissionsResults = f.removePermissionsResults[1:]
+	return result.resp, result.err
+}
+
+func (f *mockVpcepServiceClient) ListServicePermissionsDetails(
+	req *model.ListServicePermissionsDetailsRequest) (*model.ListServicePermissionsDetailsResponse, error) {
+	f.listPermissionsDetailsReq = req
+	f.listPermissionsDetailsCalls++
+	if len(f.listPermissionsResults) == 0 {
+		return nil, nil
+	}
+	result := f.listPermissionsResults[0]
+	f.listPermissionsResults = f.listPermissionsResults[1:]
+	return result.resp, result.err
+}
+
+func buildVpcepServiceInput() VpcepServiceInput {
+	return VpcepServiceInput{
+		VpcId:      testVpcId,
+		PortId:     testVpcepServicePortId,
+		ServerType: "VM",
+		Ports:      []PortPair{{ClientPort: 80, ServerPort: 8080}},
+	}
+}
+
+func buildCreateEndpointServiceResponse(serviceId, status string) *model.CreateEndpointServiceResponse {
+	return &model.CreateEndpointServiceResponse{Id: ptr(serviceId), Status: ptr(status)}
+}
+
+func buildListServiceDetailsResponse(status string) *model.ListServiceDetailsResponse {
+	ports := []model.PortList{{ClientPort: ptr(int32(80)), ServerPort: ptr(int32(8080)),
+		Protocol: ptr(model.GetPortListProtocolEnum().TCP)}}
+	return &model.ListServiceDetailsResponse{
+		Status:     ptr(status),
+		ServerType: ptr("VM"),
+		VpcId:      ptr(testVpcId),
+		PortId:     ptr(testVpcepServicePortId),
+		Ports:      &ports,
+	}
+}
+
+func buildPermissionsResponse(permissions []model.PermissionObject) *model.ListServicePermissionsDetailsResponse {
+	return &model.ListServicePermissionsDetailsResponse{Permissions: &permissions}
+}
+
+func assertErrorContains(t *testing.T, err error, expectedErr *string) {
+	t.Helper()
+
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), *expectedErr)
+	}
+}
+
+func newFastPollingVpcepService(client VpcepServiceClient) *VpcepService {
+	service := NewVpcepService(client)
+	service.pollingInterval = time.Nanosecond
+	service.pollingTimeout = time.Second
+	service.retryBaseDelay = time.Nanosecond
+	return service
+}
+
+func newTimeoutPollingVpcepService(client VpcepServiceClient) *VpcepService {
+	service := NewVpcepService(client)
+	service.pollingInterval = time.Hour
+	service.pollingTimeout = time.Nanosecond
+	return service
+}
+
+func newSlowPollingVpcepService(client VpcepServiceClient) *VpcepService {
+	service := NewVpcepService(client)
+	service.pollingInterval = time.Hour
+	service.pollingTimeout = time.Hour
+	return service
 }

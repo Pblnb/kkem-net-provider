@@ -30,12 +30,20 @@ type VpcepServiceClient interface {
 
 // VpcepService - VPCEP Service service 层
 type VpcepService struct {
-	client VpcepServiceClient
+	client          VpcepServiceClient
+	pollingInterval time.Duration
+	pollingTimeout  time.Duration
+	retryBaseDelay  time.Duration
 }
 
 // NewVpcepService - 构造函数
 func NewVpcepService(client VpcepServiceClient) *VpcepService {
-	return &VpcepService{client: client}
+	return &VpcepService{
+		client:          client,
+		pollingInterval: pollingInterval,
+		pollingTimeout:  pollingTimeout,
+		retryBaseDelay:  retryBaseDelay,
+	}
 }
 
 // PortPair - VPCEP Service 端口对
@@ -102,7 +110,7 @@ func (s *VpcepService) Create(ctx context.Context, input VpcepServiceInput) (str
 	})
 
 	var createResp *model.CreateEndpointServiceResponse
-	err = retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err = retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		createResp, innerErr = s.client.CreateEndpointService(createReq)
 		if innerErr != nil {
@@ -134,8 +142,8 @@ func (s *VpcepService) Create(ctx context.Context, input VpcepServiceInput) (str
 
 // waitForReady 轮询等待 VPCEP Service 状态变为 available
 func (s *VpcepService) waitForReady(ctx context.Context, serviceId string) error {
-	timeout := time.After(pollingTimeout)
-	ticker := time.NewTicker(pollingInterval)
+	timeout := time.After(s.pollingTimeout)
+	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0
@@ -203,7 +211,7 @@ func (s *VpcepService) Delete(ctx context.Context, serviceId string) error {
 		"service_id": serviceId,
 	})
 
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.DeleteEndpointService(deleteReq)
 		if innerErr != nil {
 			if isVpcepNotFoundError(innerErr) {
@@ -245,7 +253,7 @@ func (s *VpcepService) AddPermissions(ctx context.Context, serviceId string, per
 		"permissions": len(permissions),
 	})
 
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.BatchAddEndpointServicePermissions(req)
 		if innerErr != nil {
 			tflog.Warn(ctx, "BatchAddEndpointServicePermissions API failed, retrying", map[string]any{
@@ -309,7 +317,7 @@ func (s *VpcepService) ReconcilePermissions(ctx context.Context, serviceId strin
 			Permissions: removePermissions,
 		},
 	}
-	err = retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err = retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.BatchRemoveEndpointServicePermissions(removeReq)
 		if innerErr != nil {
 			tflog.Warn(ctx, "BatchRemoveEndpointServicePermissions API failed, retrying", map[string]any{
@@ -332,7 +340,7 @@ func (s *VpcepService) ReconcilePermissions(ctx context.Context, serviceId strin
 // GetPermissions - 查询当前权限列表，返回 map[permission]id
 func (s *VpcepService) GetPermissions(ctx context.Context, serviceId string) (map[string]string, error) {
 	var getResp *model.ListServicePermissionsDetailsResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		getResp, innerErr = s.client.ListServicePermissionsDetails(&model.ListServicePermissionsDetailsRequest{
 			VpcEndpointServiceId: serviceId,
@@ -386,7 +394,7 @@ func (s *VpcepService) UpdateConfig(ctx context.Context, serviceId string, input
 		"ports":      len(input.Ports),
 	})
 
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.UpdateEndpointService(updateReq)
 		if innerErr != nil {
 			tflog.Warn(ctx, "UpdateEndpointService API failed, retrying", map[string]any{
@@ -408,7 +416,7 @@ func (s *VpcepService) UpdateConfig(ctx context.Context, serviceId string, input
 func (s *VpcepService) Get(ctx context.Context, serviceId string) (*VpcepServiceOutput, error) {
 	serviceNotFound := false
 	var getResp *model.ListServiceDetailsResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		getResp, innerErr = s.client.ListServiceDetails(&model.ListServiceDetailsRequest{
 			VpcEndpointServiceId: serviceId,
