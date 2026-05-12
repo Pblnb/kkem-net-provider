@@ -10,22 +10,25 @@ import (
 )
 
 const (
-	testM3VpcId           = "m3-vpc-1"
-	testM3ServerType      = "LB"
-	testM3PortId          = "port-1"
-	testM1PlusVpcId       = "m1-vpc-1"
-	testM1PlusSubnetId    = "subnet-1"
-	testDnsDomain         = "api"
-	testDnsDomainSuffix   = "internal"
-	testLbmDnsServiceName = "service-name-1"
-	testRegionCode        = "region-1"
-	testVpcepServiceId    = "service-1"
-	testVpcepEndpointId   = "endpoint-1"
-	testVpcepEndpointIp   = "10.0.0.8"
-	testLbmDnsRecordId    = "dns-record-1"
-	testSniProxyID        = "sni-1"
-	testVpcepID           = "vpcep-1"
-	testDnsID             = "dns-1"
+	testM3VpcId            = "m3-vpc-1"
+	testM3ServerType       = "LB"
+	testM3PortId           = "port-1"
+	testM1PlusVpcId        = "m1-vpc-1"
+	testM1PlusSubnetId     = "subnet-1"
+	testDnsDomain          = "api"
+	testDnsDomainSuffix    = "internal"
+	testLbmDnsServiceName  = "service-name-1"
+	testRegionCode         = "region-1"
+	testVpcepServiceId     = "service-1"
+	testVpcepEndpointId    = "endpoint-1"
+	testVpcepEndpointIp    = "10.0.0.8"
+	testLbmDnsRecordId     = "dns-record-1"
+	testSniProxyID         = "sni-1"
+	testVpcepID            = "vpcep-1"
+	testDnsID              = "dns-1"
+	testIamDomainId        = "domain-id-1"
+	testAnotherIamDomainId = "domain-id-2"
+	testPermissionId       = "permission-1"
 )
 
 func testVpcepServicePorts() []vpcepServicePortBlock {
@@ -37,8 +40,8 @@ func testVpcepServicePorts() []vpcepServicePortBlock {
 
 func testVpcepServicePermissions() []vpcepServicePermissionBlock {
 	return []vpcepServicePermissionBlock{
-		{Permission: "domain-id-a"},
-		{Permission: "domain-id-b"},
+		{Permission: testIamDomainId},
+		{Permission: testAnotherIamDomainId},
 	}
 }
 
