@@ -18,12 +18,18 @@ import (
 
 // LbmDnsService - LBM-DNS service 层
 type LbmDnsService struct {
-	client lbmdnsclient.LbmDnsClient
+	client          lbmdnsclient.LbmDnsClient
+	pollingInterval time.Duration
+	pollingTimeout  time.Duration
 }
 
 // NewLbmDnsService - 构造函数
 func NewLbmDnsService(client lbmdnsclient.LbmDnsClient) *LbmDnsService {
-	return &LbmDnsService{client: client}
+	return &LbmDnsService{
+		client:          client,
+		pollingInterval: pollingInterval,
+		pollingTimeout:  pollingTimeout,
+	}
 }
 
 // CreateLbmDnsInput - 创建 lbm-dns 记录的输入参数
@@ -116,8 +122,8 @@ func (s *LbmDnsService) waitForLbmDnsRecordReady(ctx context.Context, taskId str
 // waitForTaskCompleted 轮询等待 lbm-dns 异步任务完成
 func (s *LbmDnsService) waitForTaskCompleted(ctx context.Context,
 	taskId, taskName string) (*lbmdnsclient.GetIntranetDnsDomainTaskStatusResponse, error) {
-	timeout := time.After(pollingTimeout)
-	ticker := time.NewTicker(pollingInterval)
+	timeout := time.After(s.pollingTimeout)
+	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0

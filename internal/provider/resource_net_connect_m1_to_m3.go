@@ -615,7 +615,9 @@ func (r *netConnectM1ToM3Resource) ModifyPlan(ctx context.Context, req resource.
 	serviceMissing := state.VpcepServiceId.IsNull()
 	serviceReplace := !serviceMissing && serviceRequiresReplacement(state, plan)
 	serviceUpdate := !serviceMissing && !serviceReplace && serviceRequiresInPlaceUpdate(state, plan)
+
 	endpointUnknown := endpointRequiresUpdate(state, plan, serviceMissing || serviceReplace)
+
 	dnsUnknown, diags := dnsRequiresUpdate(ctx, state, plan, endpointUnknown)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -625,12 +627,14 @@ func (r *netConnectM1ToM3Resource) ModifyPlan(ctx context.Context, req resource.
 	if serviceMissing || serviceReplace || serviceUpdate {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_service_id"), types.StringUnknown())...)
 	}
+
 	if endpointUnknown {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_id"), types.StringUnknown())...)
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_ip"), types.StringUnknown())...)
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_service_id"),
 			types.StringUnknown())...)
 	}
+
 	if dnsUnknown {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("lbm_dns_record_id"), types.StringUnknown())...)
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("lbm_dns_record_values"),
