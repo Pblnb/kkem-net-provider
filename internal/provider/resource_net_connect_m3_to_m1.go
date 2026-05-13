@@ -11,8 +11,11 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"huawei.com/kkem/kkem-net-provider/internal/client/sniproxyclient"
 
 	"huawei.com/kkem/kkem-net-provider/internal/service"
 )
@@ -32,10 +35,10 @@ type createdResource struct {
 type netConnectM3ToM1Model struct {
 	//vpc-endpoint相关
 	M3VpcEndpointId       types.String `tfsdk:"m3_vpcep_id"`
-	M3VpcID               string       `tfsdk:"m3_vpc_id"`
+	M3VpcID               types.String `tfsdk:"m3_vpc_id"`
 	M3VpcEndpointIp       types.String `tfsdk:"m3_vpcep_ip"`
-	M3VpcEndpointSubnetId string       `tfsdk:"m3_vpcep_subnet_id"`
-	SniVpcepServerId      string       `tfsdk:"sni_vpcep_server_id"`
+	M3VpcEndpointSubnetId types.String `tfsdk:"m3_vpcep_subnet_id"`
+	SniVpcepServerId      types.String `tfsdk:"sni_vpcep_server_id"`
 	//dns相关
 	M3DnsDomainName    types.String `tfsdk:"m3_dns_domain_name"`
 	M3DnsPrivateZoneId types.String `tfsdk:"m3_dns_privatezone_id"`
@@ -52,19 +55,49 @@ func (r *netConnectM3ToM1Resource) Schema(ctx context.Context, req resource.Sche
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			// --- VPCEP Endpoint 相关 ---
-			"m3_vpcep_id":         schema.StringAttribute{Computed: true},
-			"m3_vpc_id":           schema.StringAttribute{Required: true},
-			"m3_vpcep_ip":         schema.StringAttribute{Computed: true},
-			"m3_vpcep_subnet_id":  schema.StringAttribute{Required: true},
-			"sni_vpcep_server_id": schema.StringAttribute{Required: true},
+			"m3_vpcep_id": schema.StringAttribute{Computed: true},
+			"m3_vpc_id": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"m3_vpcep_ip": schema.StringAttribute{Computed: true},
+			"m3_vpcep_subnet_id": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"sni_vpcep_server_id": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			// --- DNS 相关 ---
-			"m3_dns_domain_name":    schema.StringAttribute{Optional: true},
+			"m3_dns_domain_name":    schema.StringAttribute{Required: true},
 			"m3_dns_privatezone_id": schema.StringAttribute{Computed: true},
 			// --- SNI Proxy 相关 ---
 			"sni_proxy_resource_id": schema.StringAttribute{Computed: true},
-			"region_code":           schema.StringAttribute{Required: true},
-			"service_name":          schema.StringAttribute{Required: true},
-			"m3_iam_domain_account": schema.StringAttribute{Required: true},
+			"region_code": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"service_name": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"m3_iam_domain_account": schema.StringAttribute{
+				Required: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 		},
 	}
 }
@@ -151,9 +184,9 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	tflog.Info(ctx, "Step 2: Creating M3 vpc-endpoint")
 
 	vpcepEndpointId, clientIp, err := r.vpcepEndpoint.Create(ctx, service.VpcEndpointInput{
-		EndpointServiceId: plan.SniVpcepServerId,
-		VpcId:             plan.M3VpcID,
-		SubnetId:          plan.M3VpcEndpointSubnetId,
+		EndpointServiceId: plan.SniVpcepServerId.ValueString(),
+		VpcId:             plan.M3VpcID.ValueString(),
+		SubnetId:          plan.M3VpcEndpointSubnetId.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("create vpc-endpoint failed", err.Error())
@@ -176,7 +209,7 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 
 		domainID, err := r.dnsService.CreatePrivateZone(ctx, service.DnsZoneInput{
 			DomainName: plan.M3DnsDomainName.ValueString(),
-			RouterId:   plan.M3VpcID,
+			RouterId:   plan.M3VpcID.ValueString(),
 		})
 		if err != nil {
 			resp.Diagnostics.AddError("create M3 intranet domain failed", err.Error())
@@ -223,18 +256,24 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	if !state.SniProxyResourceId.IsNull() {
-		output, err := r.sniProxyService.GetSniProxy(ctx, state.SniProxyResourceId.ValueString())
-		if err != nil {
-			if strings.Contains(err.Error(), "not exist") {
-				tflog.Info(ctx, "sni-proxy-server not found, marking as null", map[string]any{
-					"ResourceId": state.SniProxyResourceId.ValueString(),
-				})
-				state.SniProxyResourceId = types.StringNull()
-			} else {
-				resp.Diagnostics.AddError("Failed to get SNI proxy", err.Error())
-				return
-			}
+		output, getAccessServiceResponse, err := r.sniProxyService.GetSniProxy(ctx, state.SniProxyResourceId.ValueString())
+		if getAccessServiceResponse != nil && sniproxyclient.IsNotExist(getAccessServiceResponse.Body.Code) {
+			tflog.Info(ctx, "sni-proxy-server not found, marking as null", map[string]any{
+				"ResourceId": state.SniProxyResourceId.ValueString(),
+			})
+			state.SniProxyResourceId = types.StringNull()
+			state.ServiceName = types.StringNull()
+			state.RegionCode = types.StringNull()
+			state.DomainAccount = types.StringNull()
+		} else if err != nil {
+			resp.Diagnostics.AddError("Failed to get SNI proxy", err.Error())
+			return
 		} else {
+			if output.ResourceId == "" {
+				state.ServiceName = types.StringNull()
+				state.RegionCode = types.StringNull()
+				state.DomainAccount = types.StringNull()
+			}
 			state.SniProxyResourceId = types.StringValue(output.ResourceId)
 		}
 	}
@@ -266,6 +305,9 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 			})
 			state.M3VpcEndpointId = types.StringNull()
 			state.M3VpcEndpointIp = types.StringNull()
+			state.M3VpcID = types.StringNull()
+			state.M3VpcEndpointSubnetId = types.StringNull()
+			state.SniVpcepServerId = types.StringNull()
 		}
 	}
 
@@ -282,12 +324,80 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 func (r *netConnectM3ToM1Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "KKEM_net_connect_m3_to_m1: Update called")
+
+	var state netConnectM3ToM1Model
 	var plan netConnectM3ToM1Model
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	// 补齐相关update逻辑（TODO）
+	var created []createdResource
+	defer func() {
+		if resp.Diagnostics.HasError() {
+			tflog.Warn(ctx, "Create failed, starting rollback", map[string]any{
+				"created_count": len(created),
+			})
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+			if rollbackErrs := r.rollback(ctx, created); len(rollbackErrs) > 0 {
+				details := make([]string, len(rollbackErrs))
+				for i, err := range rollbackErrs {
+					details[i] = err.Error()
+				}
+				resp.Diagnostics.AddWarning(
+					"resource update failed and rollback encountered errors, manual cleanup may be required",
+					fmt.Sprintf("resource creation failed, triggering rollback. errors occurred during rollback, please check and manually clean up residual resources:\n%s",
+						strings.Join(details, "\n")),
+				)
+			}
+		}
+	}()
+
+	// 仅处理 m3_dns_domain_name 变更，其他字段变化会触发 RequiresReplace，不会进入 Update
+	if !plan.M3DnsDomainName.Equal(state.M3DnsDomainName) && !plan.M3DnsDomainName.IsNull() {
+		newDomainID, err := r.dnsService.CreatePrivateZone(ctx, service.DnsZoneInput{
+			DomainName: plan.M3DnsDomainName.ValueString(),
+			RouterId:   plan.M3VpcID.ValueString(),
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("create new intranet domain failed", err.Error())
+			return
+		}
+
+		created = append(created, createdResource{
+			Type: "intranet_domain",
+			ID:   newDomainID,
+		})
+
+		tflog.Info(ctx, "New intranet domain created", map[string]any{
+			"domain_id": newDomainID,
+			"domain":    plan.M3DnsDomainName.ValueString(),
+		})
+
+		clientIp := state.M3VpcEndpointIp.ValueString()
+
+		_, err = r.dnsService.CreateRecordSet(ctx, service.DnsRecordSetInput{
+			ZoneId:  newDomainID,
+			Name:    plan.M3DnsDomainName.ValueString(),
+			Records: []string{clientIp},
+		})
+		if err != nil {
+			resp.Diagnostics.AddError("create record set for new domain failed", err.Error())
+			return
+		}
+
+		if err := r.dnsService.DeletePrivateZone(ctx, state.M3DnsPrivateZoneId.ValueString()); err != nil {
+			resp.Diagnostics.AddError(
+				"Failed to delete old intranet domain",
+				fmt.Sprintf("Old domain ID %s could not be deleted: %s", state.M3DnsPrivateZoneId.ValueString(), err.Error()),
+			)
+		}
+
+		state.M3DnsPrivateZoneId = types.StringValue(newDomainID)
+		state.M3DnsDomainName = plan.M3DnsDomainName
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	}
 }
 
 func (r *netConnectM3ToM1Resource) Delete(ctx context.Context, req resource.DeleteRequest,
@@ -321,7 +431,7 @@ func (r *netConnectM3ToM1Resource) Delete(ctx context.Context, req resource.Dele
 
 	if !state.SniProxyResourceId.IsNull() && deleteErr == nil {
 		if err := r.sniProxyService.DeleteSniProxy(ctx, state.SniProxyResourceId.ValueString()); err != nil {
-			deleteErr = fmt.Errorf("failed to delete sni-proxy failed: %w", err)
+			deleteErr = fmt.Errorf("failed to delete sni-proxy: %w", err)
 		} else {
 			state.SniProxyResourceId = types.StringNull()
 		}

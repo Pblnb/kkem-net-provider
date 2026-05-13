@@ -176,6 +176,13 @@ func (s *SniProxyService) checkAccessReady(ctx context.Context, resourceId strin
 
 // DeleteSniProxy - 删除 SNI Proxy 接入
 func (s *SniProxyService) DeleteSniProxy(ctx context.Context, resourceId string) error {
+	if resourceId == "" {
+		tflog.Info(ctx, "SNI Proxy access deleted", map[string]any{
+			"resource_id": resourceId,
+		})
+		return nil
+	}
+
 	if s.client == nil {
 		return errors.New("sni proxy client is not initialized")
 	}
@@ -213,9 +220,9 @@ func (s *SniProxyService) DeleteSniProxy(ctx context.Context, resourceId string)
 }
 
 // GetSniProxy - 查询 SNI Proxy 接入详情，不存在时返回 nil, nil
-func (s *SniProxyService) GetSniProxy(ctx context.Context, resourceId string) (*AccessSniProxyOutput, error) {
+func (s *SniProxyService) GetSniProxy(ctx context.Context, resourceId string) (*AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
 	if s.client == nil {
-		return nil, errors.New("sni proxy client is not initialized")
+		return nil, nil, errors.New("sni proxy client is not initialized")
 	}
 
 	tflog.Debug(ctx, "Querying SNI Proxy access", map[string]any{
@@ -229,20 +236,20 @@ func (s *SniProxyService) GetSniProxy(ctx context.Context, resourceId string) (*
 		return innerErr
 	})
 	if err != nil {
-		return nil, fmt.Errorf("call GetAccessService API failed: %w", err)
+		return nil, nil, fmt.Errorf("call GetAccessService API failed: %w", err)
 	}
 
 	if resp == nil {
-		return nil, fmt.Errorf("response is nil for resource %s", resourceId)
+		return nil, nil, fmt.Errorf("response is nil for resource %s", resourceId)
 	}
 
 	if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
-		return nil, fmt.Errorf("query SNI Proxy access failed: httpStatusCode=%d", resp.HTTPStatusCode)
+		return nil, nil, fmt.Errorf("query SNI Proxy access failed: httpStatusCode=%d", resp.HTTPStatusCode)
 	}
 
 	if resp.Body.Code != 0 {
 		if sniproxyclient.IsNotExist(resp.Body.Code) {
-			return nil, fmt.Errorf("query SNI Proxy access failed: code=%d, msg=%s", resp.Body.Code, resp.Body.Msg)
+			return nil, resp, fmt.Errorf("query SNI Proxy access failed: code=%d, msg=%s", resp.Body.Code, resp.Body.Msg)
 		}
 	}
 
@@ -258,5 +265,5 @@ func (s *SniProxyService) GetSniProxy(ctx context.Context, resourceId string) (*
 		RegionCode:       resp.Body.Data.RegionCode,
 		IamDomainAccount: resp.Body.Data.IamDomainAccount,
 		EpServiceIds:     epServiceIds,
-	}, nil
+	}, nil, nil
 }

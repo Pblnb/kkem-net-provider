@@ -5,6 +5,9 @@
 package sniproxyclient
 
 const (
+	statusCodeNoExist          = 6082
+	statusCodeNoStaticResource = -1
+
 	pathServiceAccess       = `/external-api/v1/lsp/iac/service/access`
 	pathServiceAccessDelete = `/external-api/v1/lsp/iac/service/access/%s`
 	pathServiceAccessGet    = `/external-api/v1/lsp/iac/service/access/%s`

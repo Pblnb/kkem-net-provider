@@ -19,8 +19,6 @@ type SniProxyClient interface {
 	GetAccessService(ctx context.Context, resourceId string) (*GetAccessServiceResponse, error)
 }
 
-const notExistCode = 6082
-
 type Client struct {
 	*common.Client
 }
@@ -97,5 +95,5 @@ func (c *Client) GetAccessService(ctx context.Context, resourceId string) (*GetA
 
 // IsNotExist 根据响应信息判断是否sni-proxy资源为不存在
 func IsNotExist(code int) bool {
-	return code == notExistCode
+	return code == statusCodeNoExist || code == statusCodeNoStaticResource
 }
