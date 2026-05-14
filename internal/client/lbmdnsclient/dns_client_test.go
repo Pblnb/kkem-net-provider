@@ -58,7 +58,6 @@ func TestNewDnsClient(t *testing.T) {
 }
 
 func TestClient_CreateIntranetDnsDomain(t *testing.T) {
-	marshalErr := errors.New("marshal failed")
 	testCases := []struct {
 		name               string
 		server             func(t *testing.T) *httptest.Server
@@ -130,7 +129,7 @@ func TestClient_CreateIntranetDnsDomain(t *testing.T) {
 			defer server.Close()
 			if tc.patchMarshal {
 				patches := gomonkey.ApplyFunc(json.Marshal, func(v any) ([]byte, error) {
-					return nil, marshalErr
+					return nil, errors.New("marshal failed")
 				})
 				defer patches.Reset()
 			}
@@ -285,7 +284,6 @@ func TestClient_GetIntranetDnsDomain(t *testing.T) {
 }
 
 func TestClient_UpdateIntranetDnsDomain(t *testing.T) {
-	marshalErr := errors.New("marshal failed")
 	testCases := []struct {
 		name               string
 		server             func(t *testing.T) *httptest.Server
@@ -354,7 +352,7 @@ func TestClient_UpdateIntranetDnsDomain(t *testing.T) {
 			defer server.Close()
 			if tc.patchMarshal {
 				patches := gomonkey.ApplyFunc(json.Marshal, func(v any) ([]byte, error) {
-					return nil, marshalErr
+					return nil, errors.New("marshal failed")
 				})
 				defer patches.Reset()
 			}

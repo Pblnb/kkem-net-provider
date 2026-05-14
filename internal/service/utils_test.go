@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsVpcepNotFoundError(t *testing.T) {
+func Test_isVpcepNotFoundError(t *testing.T) {
 	const testVpcepNotFoundErrorCode = "EndPoint.0005"
 
 	testCases := []struct {
@@ -65,7 +65,35 @@ func TestIsVpcepNotFoundError(t *testing.T) {
 	}
 }
 
-func TestRetryWithBackoff(t *testing.T) {
+func Test_boolPtr(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    bool
+		expected bool
+	}{
+		{
+			name:     "GIVEN true value WHEN boolPtr SHOULD return true pointer",
+			input:    true,
+			expected: true,
+		},
+		{
+			name:     "GIVEN false value WHEN boolPtr SHOULD return false pointer",
+			input:    false,
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := boolPtr(tc.input)
+
+			assert.NotNil(t, actual)
+			assert.Equal(t, tc.expected, *actual)
+		})
+	}
+}
+
+func Test_retryWithBackoff(t *testing.T) {
 	expectedErr := errors.New("temporary failed")
 	testCases := []struct {
 		name             string

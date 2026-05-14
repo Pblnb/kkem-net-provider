@@ -22,12 +22,20 @@ type VpcepEndpointClient interface {
 
 // VpcepEndpointService - VPCEP Endpoint service 层
 type VpcepEndpointService struct {
-	client VpcepEndpointClient
+	client          VpcepEndpointClient
+	pollingInterval time.Duration
+	pollingTimeout  time.Duration
+	retryBaseDelay  time.Duration
 }
 
 // NewVpcepEndpointService - 构造函数
 func NewVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointService {
-	return &VpcepEndpointService{client: client}
+	return &VpcepEndpointService{
+		client:          client,
+		pollingInterval: pollingInterval,
+		pollingTimeout:  pollingTimeout,
+		retryBaseDelay:  retryBaseDelay,
+	}
 }
 
 // VpcEndpointInput - 创建 VPCEP Endpoint 的输入参数
@@ -64,7 +72,7 @@ func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInpu
 	})
 
 	var createResp *model.CreateEndpointResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		createResp, innerErr = s.client.CreateEndpoint(createReq)
 		if innerErr != nil {
@@ -78,8 +86,14 @@ func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInpu
 		return "", "", fmt.Errorf("createEndpoint API failed after retries: %w", err)
 	}
 
+	if createResp == nil {
+		return "", "", fmt.Errorf("createEndpoint response is nil")
+	}
 	if createResp.Id == nil {
 		return "", "", fmt.Errorf("createEndpoint response has no ID")
+	}
+	if createResp.Status == nil {
+		return "", "", fmt.Errorf("createEndpoint response has no status")
 	}
 
 	endpointId := *createResp.Id
@@ -98,8 +112,8 @@ func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInpu
 
 // waitForReady 轮询等待 VPCEP Endpoint 状态变为 accepted，返回 endpoint IP
 func (s *VpcepEndpointService) waitForReady(ctx context.Context, endpointId string) (string, error) {
-	timeout := time.After(pollingTimeout)
-	ticker := time.NewTicker(pollingInterval)
+	timeout := time.After(s.pollingTimeout)
+	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0
@@ -155,7 +169,7 @@ func (s *VpcepEndpointService) Delete(ctx context.Context, endpointId string) er
 		"endpoint_id": endpointId,
 	})
 
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.DeleteEndpoint(deleteReq)
 		if innerErr != nil {
 			if isVpcepNotFoundError(innerErr) {
@@ -180,7 +194,7 @@ func (s *VpcepEndpointService) Delete(ctx context.Context, endpointId string) er
 func (s *VpcepEndpointService) Get(ctx context.Context, endpointId string) (*VpcepEndpointOutput, error) {
 	endpointNotFound := false
 	var getResp *model.ListEndpointInfoDetailsResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		getResp, innerErr = s.client.ListEndpointInfoDetails(&model.ListEndpointInfoDetailsRequest{
 			VpcEndpointId: endpointId,
