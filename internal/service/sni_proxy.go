@@ -22,12 +22,18 @@ const (
 
 // SniProxyService - SNI Proxy service 层
 type SniProxyService struct {
-	client sniproxyclient.SniProxyClient
+	client          sniproxyclient.SniProxyClient
+	pollingInterval time.Duration
+	pollingTimeout  time.Duration
 }
 
 // NewSniProxyService - 构造函数
 func NewSniProxyService(client sniproxyclient.SniProxyClient) *SniProxyService {
-	return &SniProxyService{client: client}
+	return &SniProxyService{
+		client:          client,
+		pollingInterval: pollingInterval,
+		pollingTimeout:  pollingTimeout,
+	}
 }
 
 // AccessSniProxyInput - 接入 SNI Proxy 的输入参数
@@ -109,9 +115,10 @@ func (s *SniProxyService) waitForSniProxyAccessReady(ctx context.Context, resour
 		return result, nil
 	}
 
-	timer := time.NewTimer(pollingTimeout)
+	// Use service fields to support dependency injection for faster testing
+	timer := time.NewTimer(s.pollingTimeout)
 	defer timer.Stop()
-	ticker := time.NewTicker(pollingInterval)
+	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0
@@ -145,6 +152,9 @@ func (s *SniProxyService) checkAccessReady(ctx context.Context, resourceId strin
 	resp, err := s.client.GetAccessService(ctx, resourceId)
 	if err != nil {
 		return nil, err
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("GetAccessService returned nil response with no error")
 	}
 	if resp.HTTPStatusCode < 200 || resp.HTTPStatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP %d", resp.HTTPStatusCode)
