@@ -11,11 +11,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int32validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	tfvalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -106,11 +111,36 @@ type lbmDnsRecordValueBlock struct {
 type m1ToM3StaleResources struct {
 	dnsRecordId string
 	endpointId  string
-	serviceId   string
 }
 
 func NewNetConnectM1ToM3Resource() resource.Resource {
 	return &netConnectM1ToM3Resource{}
+}
+
+// requiredM1ToM3StringAttribute 用于普通必填字符串字段，仅校验非空，不影响资源替换策略。
+func requiredM1ToM3StringAttribute() schema.StringAttribute {
+	return schema.StringAttribute{
+		Required:   true,
+		Validators: []tfvalidator.String{stringvalidator.LengthAtLeast(1)},
+	}
+}
+
+// requiredM1ToM3RootStringAttribute 用于决定 M1→M3 根资源身份的必填字符串字段，变更时需要替换资源。
+func requiredM1ToM3RootStringAttribute() schema.StringAttribute {
+	return schema.StringAttribute{
+		Required:   true,
+		Validators: []tfvalidator.String{stringvalidator.LengthAtLeast(1)},
+		PlanModifiers: []planmodifier.String{
+			stringplanmodifier.RequiresReplace(),
+		},
+	}
+}
+
+func requiredM1ToM3PortAttribute() schema.Int32Attribute {
+	return schema.Int32Attribute{
+		Required:   true,
+		Validators: []tfvalidator.Int32{int32validator.Between(1, 65535)},
+	}
 }
 
 func (r *netConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
@@ -123,36 +153,38 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			// M3 参数
-			"m3_vpc_id":      schema.StringAttribute{Required: true},
-			"m3_server_type": schema.StringAttribute{Required: true},
-			"m3_port_id":     schema.StringAttribute{Required: true},
+			"m3_vpc_id":      requiredM1ToM3RootStringAttribute(),
+			"m3_server_type": requiredM1ToM3RootStringAttribute(),
+			"m3_port_id":     requiredM1ToM3StringAttribute(),
 			"m3_vpcep_service_ports": schema.ListNestedAttribute{
-				Required: true,
+				Required:   true,
+				Validators: []tfvalidator.List{listvalidator.SizeAtLeast(1)},
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"client_port": schema.Int32Attribute{Required: true},
-						"server_port": schema.Int32Attribute{Required: true},
+						"client_port": requiredM1ToM3PortAttribute(),
+						"server_port": requiredM1ToM3PortAttribute(),
 					},
 				},
 			},
 			"m3_vpcep_service_permissions": schema.ListNestedAttribute{
-				Required: true,
+				Required:   true,
+				Validators: []tfvalidator.List{listvalidator.SizeAtLeast(1)},
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"permission": schema.StringAttribute{Required: true},
+						"permission": requiredM1ToM3StringAttribute(),
 					},
 				},
 			},
 
 			// M1+ 参数
-			"m1_plus_vpc_id":    schema.StringAttribute{Required: true},
-			"m1_plus_subnet_id": schema.StringAttribute{Required: true},
+			"m1_plus_vpc_id":    requiredM1ToM3StringAttribute(),
+			"m1_plus_subnet_id": requiredM1ToM3StringAttribute(),
 
 			// LBM DNS 参数
-			"dns_domain":           schema.StringAttribute{Required: true},
-			"dns_domain_suffix":    schema.StringAttribute{Required: true},
-			"lbm_dns_service_name": schema.StringAttribute{Required: true},
-			"region_code":          schema.StringAttribute{Required: true},
+			"dns_domain":           requiredM1ToM3StringAttribute(),
+			"dns_domain_suffix":    requiredM1ToM3StringAttribute(),
+			"lbm_dns_service_name": requiredM1ToM3StringAttribute(),
+			"region_code":          requiredM1ToM3StringAttribute(),
 
 			// 计算参数
 			"vpcep_service_id":          schema.StringAttribute{Computed: true},
@@ -357,9 +389,9 @@ func (r *netConnectM1ToM3Resource) rollbackCreate(ctx context.Context, plan *net
 	return errs
 }
 
-// Read 逻辑（Partial Repair 策略）：
+// Read 逻辑（Empty-State Repair 策略）：
 // - 查询所有子资源的存在性并回填远端真实属性
-// - 若某个子资源返回 404，则仅将其 Computed ID 字段置为 null
+// - 若某个子资源返回 404，则将其 Computed 字段置为 null，并清空对应输入字段
 // - 若所有子资源均不存在，则调用 RemoveResource
 func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Read started")
@@ -384,8 +416,7 @@ func (r *netConnectM1ToM3Resource) Read(ctx context.Context, req resource.ReadRe
 		return
 	}
 
-	allRemoved := state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() && state.LbmDnsRecordId.IsNull()
-	if allRemoved {
+	if m1ToM3AllChildIdentitiesMissing(state) {
 		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
 		return
@@ -405,10 +436,11 @@ func (r *netConnectM1ToM3Resource) refreshVpcepServiceState(ctx context.Context,
 		return err
 	}
 	if output == nil {
-		tflog.Info(ctx, "Vpcep-service not found, marking as null (Partial Repair)", map[string]any{
+		tflog.Info(ctx, "Vpcep-service not found, marking as empty state", map[string]any{
 			"service_id": state.VpcepServiceId.ValueString(),
 		})
 		state.VpcepServiceId = types.StringNull()
+		clearM1ToM3ServiceInputState(state)
 		return nil
 	}
 
@@ -443,12 +475,13 @@ func (r *netConnectM1ToM3Resource) refreshVpcepEndpointState(ctx context.Context
 		return err
 	}
 	if output == nil {
-		tflog.Info(ctx, "Vpcep-endpoint not found, marking as null (Partial Repair)", map[string]any{
+		tflog.Info(ctx, "Vpcep-endpoint not found, marking as empty state", map[string]any{
 			"endpoint_id": state.VpcepEndpointId.ValueString(),
 		})
 		state.VpcepEndpointId = types.StringNull()
 		state.VpcepEndpointIp = types.StringNull()
 		state.VpcepEndpointServiceId = types.StringNull()
+		clearM1ToM3EndpointInputState(state)
 		return nil
 	}
 
@@ -481,11 +514,12 @@ func (r *netConnectM1ToM3Resource) refreshLbmDnsState(ctx context.Context,
 		return diags
 	}
 	if dnsDetail == nil {
-		tflog.Info(ctx, "lbm-dns record not found, marking as null (Partial Repair)", map[string]any{
+		tflog.Info(ctx, "lbm-dns record not found, marking as empty state", map[string]any{
 			"dns_record_id": state.LbmDnsRecordId.ValueString(),
 		})
 		state.LbmDnsRecordId = types.StringNull()
 		state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+		clearM1ToM3DnsInputState(state)
 		return nil
 	}
 
@@ -598,50 +632,6 @@ func normalizeVpcepServicePermissionBlocks(permissions []vpcepServicePermissionB
 	return normalizedPermissions
 }
 
-func (r *netConnectM1ToM3Resource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest,
-	resp *resource.ModifyPlanResponse) {
-	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
-		return
-	}
-
-	var plan netConnectM1ToM3Model
-	var state netConnectM1ToM3Model
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	serviceMissing := state.VpcepServiceId.IsNull()
-	serviceReplace := !serviceMissing && serviceRequiresReplacement(state, plan)
-	serviceUpdate := !serviceMissing && !serviceReplace && serviceRequiresInPlaceUpdate(state, plan)
-
-	endpointUnknown := endpointRequiresUpdate(state, plan, serviceMissing || serviceReplace)
-
-	dnsUnknown, diags := dnsRequiresUpdate(ctx, state, plan, endpointUnknown)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	if serviceMissing || serviceReplace || serviceUpdate {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_service_id"), types.StringUnknown())...)
-	}
-
-	if endpointUnknown {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_id"), types.StringUnknown())...)
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_ip"), types.StringUnknown())...)
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("vpcep_endpoint_service_id"),
-			types.StringUnknown())...)
-	}
-
-	if dnsUnknown {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("lbm_dns_record_id"), types.StringUnknown())...)
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("lbm_dns_record_values"),
-			types.ListUnknown(lbmDnsRecordValueObjectType))...)
-	}
-}
-
 func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp *resource.UpdateResponse) {
 	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Update called")
@@ -657,7 +647,7 @@ func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 
 	var stale m1ToM3StaleResources
 
-	serviceReplaced, err := r.reconcileM1ToM3Service(ctx, state, &plan, &stale)
+	serviceReplaced, err := r.reconcileM1ToM3Service(ctx, state, &plan)
 	if err != nil {
 		resp.Diagnostics.AddError("reconcile vpcep-service failed", err.Error())
 		return
@@ -690,33 +680,20 @@ func setM1ToM3UpdateState(ctx context.Context, resp *resource.UpdateResponse, pl
 }
 
 func (r *netConnectM1ToM3Resource) reconcileM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
-	plan *netConnectM1ToM3Model, stale *m1ToM3StaleResources) (bool, error) {
-	serviceMissing := state.VpcepServiceId.IsNull()
-	serviceReplace := !serviceMissing && serviceRequiresReplacement(state, *plan)
-	serviceUpdate := !serviceMissing && !serviceReplace && serviceRequiresInPlaceUpdate(state, *plan)
-
-	switch {
-	case serviceMissing:
-		serviceId, err := r.createAndWaitVpcepService(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		plan.VpcepServiceId = types.StringValue(serviceId)
-	case serviceReplace:
-		oldServiceId := state.VpcepServiceId.ValueString()
-		serviceId, err := r.createAndWaitVpcepService(ctx, plan)
-		if err != nil {
-			return false, err
-		}
-		plan.VpcepServiceId = types.StringValue(serviceId)
-		stale.serviceId = oldServiceId
-	case serviceUpdate:
+	plan *netConnectM1ToM3Model) (bool, error) {
+	if state.VpcepServiceId.IsNull() {
+		return false, fmt.Errorf("vpcep-service is missing; Terraform replacement is required")
+	}
+	if serviceRequiresReplacement(state, *plan) {
+		return false, fmt.Errorf("vpcep-service replacement should be handled by Terraform resource replacement")
+	}
+	if serviceRequiresInPlaceUpdate(state, *plan) {
 		if err := r.updateExistingM1ToM3Service(ctx, state, plan); err != nil {
 			return false, err
 		}
 		plan.VpcepServiceId = state.VpcepServiceId
 	}
-	return serviceReplace, nil
+	return false, nil
 }
 
 func (r *netConnectM1ToM3Resource) updateExistingM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
@@ -819,6 +796,30 @@ func preserveKnownComputedFields(plan *netConnectM1ToM3Model, state netConnectM1
 	}
 }
 
+func clearM1ToM3ServiceInputState(state *netConnectM1ToM3Model) {
+	state.M3VpcId = ""
+	state.M3ServerType = ""
+	state.M3PortId = ""
+	state.M3VpcepServicePorts = []vpcepServicePortBlock{}
+	state.M3VpcepServicePermissions = []vpcepServicePermissionBlock{}
+}
+
+func clearM1ToM3EndpointInputState(state *netConnectM1ToM3Model) {
+	state.M1PlusVpcId = ""
+	state.M1PlusSubnetId = ""
+}
+
+func clearM1ToM3DnsInputState(state *netConnectM1ToM3Model) {
+	state.DnsDomain = ""
+	state.DnsDomainSuffix = ""
+	state.LbmDnsServiceName = ""
+	state.RegionCode = ""
+}
+
+func m1ToM3AllChildIdentitiesMissing(state netConnectM1ToM3Model) bool {
+	return state.VpcepServiceId.IsNull() && state.VpcepEndpointId.IsNull() && state.LbmDnsRecordId.IsNull()
+}
+
 func serviceRequiresReplacement(state, plan netConnectM1ToM3Model) bool {
 	return state.M3VpcId != plan.M3VpcId || state.M3ServerType != plan.M3ServerType
 }
@@ -838,11 +839,6 @@ func servicePermissionsChanged(state, plan netConnectM1ToM3Model) bool {
 		normalizeVpcepServicePermissionBlocks(plan.M3VpcepServicePermissions))
 }
 
-func endpointRequiresUpdate(state, plan netConnectM1ToM3Model, serviceWillBeReplaced bool) bool {
-	return state.VpcepEndpointId.IsNull() || serviceWillBeReplaced ||
-		shouldReplaceEndpoint(state, plan, false)
-}
-
 func shouldReplaceEndpoint(state, plan netConnectM1ToM3Model, serviceReplaced bool) bool {
 	if state.VpcepEndpointId.IsNull() {
 		return false
@@ -857,14 +853,6 @@ func shouldReplaceEndpoint(state, plan netConnectM1ToM3Model, serviceReplaced bo
 		return true
 	}
 	return state.VpcepEndpointServiceId.ValueString() != plan.VpcepServiceId.ValueString()
-}
-
-func dnsRequiresUpdate(ctx context.Context, state, plan netConnectM1ToM3Model,
-	endpointWillBeUpdated bool) (bool, diag.Diagnostics) {
-	if state.LbmDnsRecordId.IsNull() || dnsIdentityChanged(state, plan) || endpointWillBeUpdated {
-		return true, nil
-	}
-	return lbmDnsRecordValueNeedsUpdate(ctx, state.LbmDnsRecordValues, plan.VpcepEndpointIp)
 }
 
 func dnsIdentityChanged(state, plan netConnectM1ToM3Model) bool {
@@ -918,12 +906,6 @@ func (r *netConnectM1ToM3Resource) cleanupStaleM1ToM3Resources(ctx context.Conte
 	if stale.endpointId != "" {
 		if err := r.m1PlusVpcepService.Delete(ctx, stale.endpointId); err != nil {
 			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-endpoint %s failed: %s", stale.endpointId,
-				err.Error()))
-		}
-	}
-	if stale.serviceId != "" {
-		if err := r.m3VpcepService.Delete(ctx, stale.serviceId); err != nil {
-			warnings = append(warnings, fmt.Sprintf("delete stale vpcep-service %s failed: %s", stale.serviceId,
 				err.Error()))
 		}
 	}

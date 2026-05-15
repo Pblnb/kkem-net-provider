@@ -18,6 +18,81 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/service"
 )
 
+func Test_requiredM1ToM3StringAttribute(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		expectedRequired            bool
+		expectedValidatorsLength    int
+		expectedPlanModifiersLength int
+	}{
+		{
+			name:                        "GIVEN string attribute helper WHEN requiredM1ToM3StringAttribute SHOULD return required attribute with validator",
+			expectedRequired:            true,
+			expectedValidatorsLength:    1,
+			expectedPlanModifiersLength: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := requiredM1ToM3StringAttribute()
+
+			assert.Equal(t, tc.expectedRequired, actual.Required)
+			assert.Len(t, actual.Validators, tc.expectedValidatorsLength)
+			assert.Len(t, actual.PlanModifiers, tc.expectedPlanModifiersLength)
+		})
+	}
+}
+
+func Test_requiredM1ToM3RootStringAttribute(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		expectedRequired            bool
+		expectedValidatorsLength    int
+		expectedPlanModifiersLength int
+	}{
+		{
+			name:                        "GIVEN root string attribute helper WHEN requiredM1ToM3RootStringAttribute SHOULD return required attribute with replace modifier",
+			expectedRequired:            true,
+			expectedValidatorsLength:    1,
+			expectedPlanModifiersLength: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := requiredM1ToM3RootStringAttribute()
+
+			assert.Equal(t, tc.expectedRequired, actual.Required)
+			assert.Len(t, actual.Validators, tc.expectedValidatorsLength)
+			assert.Len(t, actual.PlanModifiers, tc.expectedPlanModifiersLength)
+		})
+	}
+}
+
+func Test_requiredM1ToM3PortAttribute(t *testing.T) {
+	testCases := []struct {
+		name               string
+		expectedRequired   bool
+		expectedValidators int
+	}{
+		{
+			name:               "GIVEN port attribute helper WHEN requiredM1ToM3PortAttribute SHOULD return required attribute with port validator",
+			expectedRequired:   true,
+			expectedValidators: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := requiredM1ToM3PortAttribute()
+
+			assert.Equal(t, tc.expectedRequired, actual.Required)
+			assert.Len(t, actual.Validators, tc.expectedValidators)
+		})
+	}
+}
+
 func TestNormalizeM1ToM3ListState(t *testing.T) {
 	testCases := []struct {
 		name                string
@@ -434,6 +509,196 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 	}
 }
 
+func Test_clearM1ToM3ServiceInputState(t *testing.T) {
+	buildClearedState := func() netConnectM1ToM3Model {
+		state := buildM1ToM3Model()
+		state.M3VpcId = ""
+		state.M3ServerType = ""
+		state.M3PortId = ""
+		state.M3VpcepServicePorts = []vpcepServicePortBlock{}
+		state.M3VpcepServicePermissions = []vpcepServicePermissionBlock{}
+		return state
+	}
+
+	partialClearedState := buildM1ToM3Model()
+	partialClearedState.M3VpcId = ""
+	partialClearedState.M3VpcepServicePorts = []vpcepServicePortBlock{}
+
+	testCases := []struct {
+		name     string
+		state    netConnectM1ToM3Model
+		expected netConnectM1ToM3Model
+	}{
+		{
+			name:     "GIVEN populated state WHEN clearM1ToM3ServiceInputState SHOULD clear service input fields only",
+			state:    buildM1ToM3Model(),
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN partial empty service input fields WHEN clearM1ToM3ServiceInputState SHOULD clear remaining service input fields only",
+			state:    partialClearedState,
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN empty service input fields WHEN clearM1ToM3ServiceInputState SHOULD keep service input fields empty",
+			state:    buildClearedState(),
+			expected: buildClearedState(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := tc.state
+
+			clearM1ToM3ServiceInputState(&state)
+
+			assert.Equal(t, tc.expected, state)
+		})
+	}
+}
+
+func Test_clearM1ToM3EndpointInputState(t *testing.T) {
+	buildClearedState := func() netConnectM1ToM3Model {
+		state := buildM1ToM3Model()
+		state.M1PlusVpcId = ""
+		state.M1PlusSubnetId = ""
+		return state
+	}
+
+	partialClearedState := buildM1ToM3Model()
+	partialClearedState.M1PlusVpcId = ""
+
+	testCases := []struct {
+		name     string
+		state    netConnectM1ToM3Model
+		expected netConnectM1ToM3Model
+	}{
+		{
+			name:     "GIVEN populated state WHEN clearM1ToM3EndpointInputState SHOULD clear endpoint input fields only",
+			state:    buildM1ToM3Model(),
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN partial empty endpoint input fields WHEN clearM1ToM3EndpointInputState SHOULD clear remaining endpoint input fields only",
+			state:    partialClearedState,
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN empty endpoint input fields WHEN clearM1ToM3EndpointInputState SHOULD keep endpoint input fields empty",
+			state:    buildClearedState(),
+			expected: buildClearedState(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := tc.state
+
+			clearM1ToM3EndpointInputState(&state)
+
+			assert.Equal(t, tc.expected, state)
+		})
+	}
+}
+
+func Test_clearM1ToM3DnsInputState(t *testing.T) {
+	buildClearedState := func() netConnectM1ToM3Model {
+		state := buildM1ToM3Model()
+		state.DnsDomain = ""
+		state.DnsDomainSuffix = ""
+		state.LbmDnsServiceName = ""
+		state.RegionCode = ""
+		return state
+	}
+
+	partialClearedState := buildM1ToM3Model()
+	partialClearedState.DnsDomain = ""
+	partialClearedState.RegionCode = ""
+
+	testCases := []struct {
+		name     string
+		state    netConnectM1ToM3Model
+		expected netConnectM1ToM3Model
+	}{
+		{
+			name:     "GIVEN populated state WHEN clearM1ToM3DnsInputState SHOULD clear dns input fields only",
+			state:    buildM1ToM3Model(),
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN partial empty dns input fields WHEN clearM1ToM3DnsInputState SHOULD clear remaining dns input fields only",
+			state:    partialClearedState,
+			expected: buildClearedState(),
+		},
+		{
+			name:     "GIVEN empty dns input fields WHEN clearM1ToM3DnsInputState SHOULD keep dns input fields empty",
+			state:    buildClearedState(),
+			expected: buildClearedState(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := tc.state
+
+			clearM1ToM3DnsInputState(&state)
+
+			assert.Equal(t, tc.expected, state)
+		})
+	}
+}
+
+func Test_m1ToM3AllChildIdentitiesMissing(t *testing.T) {
+	buildState := func(serviceMissing, endpointMissing, dnsMissing bool) netConnectM1ToM3Model {
+		state := buildM1ToM3Model()
+		if serviceMissing {
+			state.VpcepServiceId = types.StringNull()
+		}
+		if endpointMissing {
+			state.VpcepEndpointId = types.StringNull()
+		}
+		if dnsMissing {
+			state.LbmDnsRecordId = types.StringNull()
+		}
+		return state
+	}
+
+	testCases := []struct {
+		name     string
+		state    netConnectM1ToM3Model
+		expected bool
+	}{
+		{
+			name:     "GIVEN all child identities are null WHEN m1ToM3AllChildIdentitiesMissing SHOULD return true",
+			state:    buildState(true, true, true),
+			expected: true,
+		},
+		{
+			name:     "GIVEN service identity remains WHEN m1ToM3AllChildIdentitiesMissing SHOULD return false",
+			state:    buildState(false, true, true),
+			expected: false,
+		},
+		{
+			name:     "GIVEN endpoint identity remains WHEN m1ToM3AllChildIdentitiesMissing SHOULD return false",
+			state:    buildState(true, false, true),
+			expected: false,
+		},
+		{
+			name:     "GIVEN dns identity remains WHEN m1ToM3AllChildIdentitiesMissing SHOULD return false",
+			state:    buildState(true, true, false),
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := m1ToM3AllChildIdentitiesMissing(tc.state)
+
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestServiceRequiresReplacement(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -614,58 +879,6 @@ func TestServicePermissionsChanged(t *testing.T) {
 	}
 }
 
-func TestEndpointRequiresUpdate(t *testing.T) {
-	testCases := []struct {
-		name                  string
-		state                 netConnectM1ToM3Model
-		plan                  netConnectM1ToM3Model
-		serviceWillBeReplaced bool
-		expected              bool
-	}{
-		{
-			name:     "GIVEN endpoint unchanged WHEN endpointRequiresUpdate SHOULD return false",
-			state:    buildM1ToM3Model(),
-			plan:     buildM1ToM3Model(),
-			expected: false,
-		},
-		{
-			name: "GIVEN missing endpoint id WHEN endpointRequiresUpdate SHOULD return true",
-			state: func() netConnectM1ToM3Model {
-				state := buildM1ToM3Model()
-				state.VpcepEndpointId = types.StringNull()
-				return state
-			}(),
-			plan:     buildM1ToM3Model(),
-			expected: true,
-		},
-		{
-			name:                  "GIVEN service will be replaced WHEN endpointRequiresUpdate SHOULD return true",
-			state:                 buildM1ToM3Model(),
-			plan:                  buildM1ToM3Model(),
-			serviceWillBeReplaced: true,
-			expected:              true,
-		},
-		{
-			name:  "GIVEN endpoint subnet changed WHEN endpointRequiresUpdate SHOULD return true",
-			state: buildM1ToM3Model(),
-			plan: func() netConnectM1ToM3Model {
-				plan := buildM1ToM3Model()
-				plan.M1PlusSubnetId = "subnet-2"
-				return plan
-			}(),
-			expected: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := endpointRequiresUpdate(tc.state, tc.plan, tc.serviceWillBeReplaced)
-
-			assert.Equal(t, tc.expected, actual)
-		})
-	}
-}
-
 func TestShouldReplaceEndpoint(t *testing.T) {
 	testCases := []struct {
 		name            string
@@ -764,86 +977,6 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 			actual := shouldReplaceEndpoint(tc.state, tc.plan, tc.serviceReplaced)
 
 			assert.Equal(t, tc.expected, actual)
-		})
-	}
-}
-
-func TestDnsRequiresUpdate(t *testing.T) {
-	ctx := context.Background()
-	testCases := []struct {
-		name                       string
-		state                      netConnectM1ToM3Model
-		plan                       netConnectM1ToM3Model
-		endpointWillBeUpdated      bool
-		expected                   bool
-		expectedDiagSummary        string
-		expectedDiagDetailContains string
-	}{
-		{
-			name:     "GIVEN dns record value matches endpoint IP WHEN dnsRequiresUpdate SHOULD return false",
-			state:    buildM1ToM3Model(),
-			plan:     buildM1ToM3Model(),
-			expected: false,
-		},
-		{
-			name: "GIVEN missing dns record id WHEN dnsRequiresUpdate SHOULD return true",
-			state: func() netConnectM1ToM3Model {
-				state := buildM1ToM3Model()
-				state.LbmDnsRecordId = types.StringNull()
-				return state
-			}(),
-			plan:     buildM1ToM3Model(),
-			expected: true,
-		},
-		{
-			name: "GIVEN dns identity changed WHEN dnsRequiresUpdate SHOULD return true",
-			state: func() netConnectM1ToM3Model {
-				state := buildM1ToM3Model()
-				state.DnsDomain = "old-api"
-				return state
-			}(),
-			plan:     buildM1ToM3Model(),
-			expected: true,
-		},
-		{
-			name:                  "GIVEN endpoint will be updated WHEN dnsRequiresUpdate SHOULD return true",
-			state:                 buildM1ToM3Model(),
-			plan:                  buildM1ToM3Model(),
-			endpointWillBeUpdated: true,
-			expected:              true,
-		},
-		{
-			name: "GIVEN dns record value differs from endpoint IP WHEN dnsRequiresUpdate SHOULD return true",
-			state: func() netConnectM1ToM3Model {
-				state := buildM1ToM3Model()
-				state.LbmDnsRecordValues = mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
-					{RecordType: "A", RecordValue: "10.0.0.9"},
-				})
-				return state
-			}(),
-			plan:     buildM1ToM3Model(),
-			expected: true,
-		},
-		{
-			name: "GIVEN invalid dns record values WHEN dnsRequiresUpdate SHOULD return diagnostics",
-			state: func() netConnectM1ToM3Model {
-				state := buildM1ToM3Model()
-				state.LbmDnsRecordValues = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("bad")})
-				return state
-			}(),
-			plan:                       buildM1ToM3Model(),
-			expected:                   false,
-			expectedDiagSummary:        "Value Conversion Error",
-			expectedDiagDetailContains: "cannot reflect tftypes.String into a struct, must be an object",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual, diags := dnsRequiresUpdate(ctx, tc.state, tc.plan, tc.endpointWillBeUpdated)
-
-			assert.Equal(t, tc.expected, actual)
-			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, diags)
 		})
 	}
 }
