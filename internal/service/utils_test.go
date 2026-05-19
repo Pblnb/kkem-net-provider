@@ -147,7 +147,7 @@ func Test_retryWithBackoff(t *testing.T) {
 			expectedAttempts: 0,
 		},
 		{
-			name:         "GIVEN context is canceled WHEN retryWithBackoff SHOULD return context error",
+			name:         "GIVEN operation error and canceled context WHEN retryWithBackoff SHOULD return context error",
 			maxRetries:   3,
 			baseInterval: time.Hour,
 			ctx: func() context.Context {

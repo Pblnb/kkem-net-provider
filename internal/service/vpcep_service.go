@@ -28,6 +28,12 @@ type VpcepServiceClient interface {
 		error)
 }
 
+const (
+	vpcepServiceStatusAvailable = "available"
+	vpcepServiceStatusCreating  = "creating"
+	vpcepServiceStatusFailed    = "failed"
+)
+
 // VpcepService - VPCEP Service service 层
 type VpcepService struct {
 	client          VpcepServiceClient
@@ -182,14 +188,14 @@ func (s *VpcepService) waitForReady(ctx context.Context, serviceId string) error
 			})
 
 			switch status {
-			case "available":
+			case vpcepServiceStatusAvailable:
 				tflog.Info(ctx, "Vpcep-service is ready", map[string]any{
 					"service_id": serviceId,
 				})
 				return nil
-			case "failed":
+			case vpcepServiceStatusFailed:
 				return fmt.Errorf("vpcep-service %s status is failed", serviceId)
-			case "creating":
+			case vpcepServiceStatusCreating:
 				continue
 			default:
 				tflog.Warn(ctx, "Vpcep-service unknown status", map[string]any{

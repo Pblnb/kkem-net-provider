@@ -3,8 +3,9 @@ module huawei.com/kkem/kkem-net-provider
 go 1.24.0
 
 require (
-	github.com/agiledragon/gomonkey/v2 v2.13.0
+	github.com/agiledragon/gomonkey/v2 v2.14.0
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
+	github.com/hashicorp/terraform-plugin-framework-validators v0.17.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.190
 	github.com/stretchr/testify v1.10.0

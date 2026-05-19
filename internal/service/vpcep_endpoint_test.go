@@ -93,7 +93,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 			expectedCreateCalls: 1,
 		},
 		{
-			name: "GIVEN canceled context and create api error WHEN Create SHOULD return wrapped context error",
+			name: "GIVEN create api error and canceled context WHEN Create SHOULD return wrapped context error",
 			ctx:  canceledContext(),
 			service: NewVpcepEndpointService(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{{err: errors.New("create failed")}},
@@ -283,7 +283,7 @@ func TestVpcepEndpointService_Delete(t *testing.T) {
 			expectedDeleteCalls: 2,
 		},
 		{
-			name: "GIVEN canceled context and delete api error WHEN Delete SHOULD return context error",
+			name: "GIVEN delete api error and canceled context WHEN Delete SHOULD return context error",
 			ctx:  canceledContext(),
 			service: NewVpcepEndpointService(&mockVpcepEndpointClient{
 				deleteResults: []vpcepEndpointDeleteResult{{err: errors.New("delete failed")}},
@@ -379,7 +379,7 @@ func TestVpcepEndpointService_Get(t *testing.T) {
 			expectedListCalls: 2,
 		},
 		{
-			name: "GIVEN query api error WHEN Get SHOULD return error",
+			name: "GIVEN query api error and canceled context WHEN Get SHOULD return error",
 			ctx:  canceledContext(),
 			service: NewVpcepEndpointService(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{{err: errors.New("query failed")}},
