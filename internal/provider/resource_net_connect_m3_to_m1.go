@@ -7,17 +7,22 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"strings"
 
 	"huawei.com/kkem/kkem-net-provider/internal/client/sniproxyclient"
 	"huawei.com/kkem/kkem-net-provider/internal/service"
+)
+
+const (
+	dnsType      = "intranet_domain"
+	vpcepType    = "vpcep_endpoint"
+	sniProxyType = "sni_proxy"
 )
 
 type netConnectM3ToM1Resource struct {
@@ -172,7 +177,7 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	created = append(created, createdResource{
-		Type: "sni_proxy",
+		Type: sniProxyType,
 		ID:   sniProxyResourceId,
 	})
 
@@ -194,7 +199,7 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	created = append(created, createdResource{
-		Type: "vpcep_endpoint",
+		Type: vpcepType,
 		ID:   vpcepEndpointId,
 	})
 
@@ -217,7 +222,7 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 		}
 
 		created = append(created, createdResource{
-			Type: "intranet_domain",
+			Type: dnsType,
 			ID:   domainID,
 		})
 
@@ -366,7 +371,7 @@ func (r *netConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 		}
 
 		created = append(created, createdResource{
-			Type: "intranet_domain",
+			Type: dnsType,
 			ID:   newDomainID,
 		})
 
@@ -454,22 +459,22 @@ func (r *netConnectM3ToM1Resource) rollback(ctx context.Context, created []creat
 		cr := created[i]
 
 		switch cr.Type {
-		case "intranet_domain":
+		case dnsType:
 			if err := r.dnsService.DeletePrivateZone(ctx, cr.ID); err != nil {
 				errs = append(errs,
-					fmt.Errorf("delete intranet_domain %s failed: %w", cr.ID, err))
+					fmt.Errorf("delete %s %s failed: %w", dnsType, cr.ID, err))
 			}
 
-		case "vpcep_endpoint":
+		case vpcepType:
 			if err := r.vpcepEndpoint.Delete(ctx, cr.ID); err != nil {
 				errs = append(errs,
-					fmt.Errorf("delete vpc-endpoint %s failed: %w", cr.ID, err))
+					fmt.Errorf("delete %s %s failed: %w", vpcepType, cr.ID, err))
 			}
 
-		case "sni_proxy":
+		case sniProxyType:
 			if err := r.sniProxyService.DeleteSniProxy(ctx, cr.ID); err != nil {
 				errs = append(errs,
-					fmt.Errorf("delete sni_proxy %s failed: %w", cr.ID, err))
+					fmt.Errorf("delete %s %s failed: %w", sniProxyType, cr.ID, err))
 			}
 		}
 	}

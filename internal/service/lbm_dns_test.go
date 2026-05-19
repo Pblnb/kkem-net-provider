@@ -23,7 +23,7 @@ const (
 )
 
 func TestNewLbmDnsService(t *testing.T) {
-	fake := &lbmDnsClientFake{}
+	fake := &mockLbmDnsClient{}
 
 	actual := NewLbmDnsService(fake)
 
@@ -45,7 +45,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 	}{
 		{
 			name: "GIVEN successful response and ready record WHEN CreateIntranetDnsDomain SHOULD return dns output",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				createResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", testLbmDnsTaskId),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -64,7 +64,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN non-2xx http response WHEN CreateIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				createResp: buildAsyncTaskResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -73,7 +73,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN unsuccessful business response WHEN CreateIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				createResp: buildAsyncTaskResponse(http.StatusOK, 1, 1, "create failed", ""),
 			}),
 			expectedErr:  "create DNS record failed: status=1, code=1, errMsg=create failed",
@@ -81,7 +81,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response without task id WHEN CreateIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				createResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -90,7 +90,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response and failed wait WHEN CreateIntranetDnsDomain SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				createResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "task-fail"),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -102,7 +102,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 		{
 			name: "GIVEN canceled context and create api error WHEN CreateIntranetDnsDomain SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				createErr: apiErr,
 			}),
 			expectedErr:  "create IntranetDnsDomain record failed after retries: context canceled",
@@ -126,7 +126,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 				assert.Nil(t, actual)
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok && tc.expectedCall {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok && tc.expectedCall {
 				assert.Equal(t, buildCreateLbmDnsInput(), fake.createInput)
 			}
 		})
@@ -142,7 +142,7 @@ func TestLbmDnsService_waitForLbmDnsRecordReady(t *testing.T) {
 	}{
 		{
 			name: "GIVEN completed task with resource id WHEN waitForLbmDnsRecordReady SHOULD return record id",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", testLbmDnsRecordId, lbmdnsclient.TaskStatusSuccess, ""),
 			}),
@@ -150,7 +150,7 @@ func TestLbmDnsService_waitForLbmDnsRecordReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN completed task without resource id WHEN waitForLbmDnsRecordReady SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "", lbmdnsclient.TaskStatusSuccess, ""),
 			}),
@@ -158,7 +158,7 @@ func TestLbmDnsService_waitForLbmDnsRecordReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN failed task wait WHEN waitForLbmDnsRecordReady SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "", lbmdnsclient.TaskStatusFailed, "failed"),
 			}),
@@ -192,7 +192,7 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 	}{
 		{
 			name: "GIVEN success task status WHEN waitForTaskCompleted SHOULD return task response",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", testLbmDnsRecordId, lbmdnsclient.TaskStatusSuccess, ""),
 			}),
@@ -201,7 +201,7 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		},
 		{
 			name: "GIVEN running then success task status WHEN waitForTaskCompleted SHOULD return task response",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResponses: []*lbmdnsclient.GetIntranetDnsDomainTaskStatusResponse{
 					buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 						lbmdnsclient.StatusCodeSuccess, "", "", "running", ""),
@@ -215,7 +215,7 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		{
 			name: "GIVEN canceled context WHEN waitForTaskCompleted SHOULD return context error",
 			ctx:  canceledContext(),
-			service: newSlowLbmDnsService(&lbmDnsClientFake{
+			service: newSlowLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, ""),
 			}),
@@ -223,7 +223,7 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		},
 		{
 			name: "GIVEN timeout WHEN waitForTaskCompleted SHOULD return timeout error",
-			service: newTimeoutLbmDnsService(&lbmDnsClientFake{
+			service: newTimeoutLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, ""),
 			}),
@@ -231,14 +231,14 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api errors beyond tolerance WHEN waitForTaskCompleted SHOULD return query error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusErr: apiErr,
 			}),
 			expectedErr: "query lbm-dns task status failed: query failed",
 		},
 		{
 			name: "GIVEN non-2xx http response WHEN waitForTaskCompleted SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, ""),
 			}),
@@ -246,14 +246,14 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		},
 		{
 			name: "GIVEN unsuccessful business response WHEN waitForTaskCompleted SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponse(http.StatusOK, 1, 1, "query failed"),
 			}),
 			expectedErr: "query task status failed: status=1, code=1, errMsg=query failed",
 		},
 		{
 			name: "GIVEN failed task status WHEN waitForTaskCompleted SHOULD return task failed error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "", lbmdnsclient.TaskStatusFailed, "failed"),
 			}),
@@ -292,7 +292,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 	}{
 		{
 			name: "GIVEN not found response WHEN DeleteIntranetDnsDomain SHOULD return nil",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeResourceNotFound, "not found", ""),
 			}),
@@ -300,7 +300,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response and completed task WHEN DeleteIntranetDnsDomain SHOULD return nil",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", testLbmDnsTaskId),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -315,7 +315,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil response WHEN DeleteIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteResp: nil,
 			}),
 			expectedErr:  "response is nil for record dns-record-1",
@@ -323,7 +323,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN non-2xx http response WHEN DeleteIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -332,7 +332,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN unsuccessful business response WHEN DeleteIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusOK, 1, 1, "delete failed", ""),
 			}),
 			expectedErr:  "response from lbm dns server contains unsuccessful code: status=1, code=1, errMsg=delete failed",
@@ -340,7 +340,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response without task id WHEN DeleteIntranetDnsDomain SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -349,7 +349,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response and failed task wait WHEN DeleteIntranetDnsDomain SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				deleteResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "task-fail"),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -361,7 +361,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 		{
 			name: "GIVEN canceled context and delete api error WHEN DeleteIntranetDnsDomain SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				deleteErr: apiErr,
 			}),
 			expectedErr:  "call DeleteIntranetDnsDomain API failed: context canceled",
@@ -383,7 +383,7 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 			} else {
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok && tc.expectedCall {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok && tc.expectedCall {
 				assert.Equal(t, testLbmDnsRecordId, fake.deleteRecordId)
 			}
 		})
@@ -401,7 +401,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 	}{
 		{
 			name: "GIVEN no changes response WHEN UpdateRecordValue SHOULD return nil",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeNoChanges,
 					lbmdnsclient.StatusCodeNoChanges, "No changes detected", ""),
 			}),
@@ -409,7 +409,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response and completed task WHEN UpdateRecordValue SHOULD return nil",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "task-success"),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -424,7 +424,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil response WHEN UpdateRecordValue SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateResp: nil,
 			}),
 			expectedErr:  "response is nil for record dns-record-1",
@@ -432,7 +432,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN non-2xx http response WHEN UpdateRecordValue SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -441,7 +441,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN unsuccessful business response WHEN UpdateRecordValue SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusOK, 1, 1, "update failed", ""),
 			}),
 			expectedErr:  "update DNS record failed: status=1, code=1, errMsg=update failed",
@@ -449,7 +449,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response without task id WHEN UpdateRecordValue SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", ""),
 			}),
@@ -458,7 +458,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		},
 		{
 			name: "GIVEN successful response and failed task wait WHEN UpdateRecordValue SHOULD return error",
-			service: newFastLbmDnsService(&lbmDnsClientFake{
+			service: newFastLbmDnsService(&mockLbmDnsClient{
 				updateResp: buildAsyncTaskResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", "task-fail"),
 				taskStatusResp: buildTaskStatusResponseWithData(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
@@ -470,7 +470,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 		{
 			name: "GIVEN canceled context and update api error WHEN UpdateRecordValue SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				updateErr: apiErr,
 			}),
 			expectedErr:  "call UpdateIntranetDnsDomain API failed: context canceled",
@@ -492,7 +492,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 			} else {
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok && tc.expectedCall {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok && tc.expectedCall {
 				assert.Equal(t, testLbmDnsRecordId, fake.updateRecordId)
 				assert.Equal(t, testEndpointIp, fake.updateIp)
 			}
@@ -560,7 +560,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 	}{
 		{
 			name: "GIVEN successful response WHEN getLbmDnsRawResponse SHOULD return resource",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", resource),
 			}),
@@ -569,7 +569,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 		},
 		{
 			name: "GIVEN not found response WHEN getLbmDnsRawResponse SHOULD return nil resource",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeResourceNotFound, "not found", nil),
 			}),
@@ -583,7 +583,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil response WHEN getLbmDnsRawResponse SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: nil,
 			}),
 			expectedErr:  "response is nil for record dns-record-1",
@@ -591,7 +591,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 		},
 		{
 			name: "GIVEN non-2xx http response WHEN getLbmDnsRawResponse SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", nil),
 			}),
@@ -600,7 +600,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 		},
 		{
 			name: "GIVEN unsuccessful business response WHEN getLbmDnsRawResponse SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, 1, 1, "query failed", nil),
 			}),
 			expectedErr:  "query DNS record failed: status=1, code=1, errMsg=query failed",
@@ -609,7 +609,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 		{
 			name: "GIVEN canceled context and query api error WHEN getLbmDnsRawResponse SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getErr: apiErr,
 			}),
 			expectedErr:  "call GetIntranetDnsDomain API failed: context canceled",
@@ -633,7 +633,7 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 				assert.Nil(t, actual)
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok && tc.expectedCall {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok && tc.expectedCall {
 				assert.Equal(t, testLbmDnsRecordId, fake.getRecordId)
 			}
 		})
@@ -695,7 +695,7 @@ func TestLbmDnsService_GetRecord(t *testing.T) {
 	}{
 		{
 			name: "GIVEN successful response WHEN GetRecord SHOULD return dns record output",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", buildLbmDnsResource()),
 			}),
@@ -708,7 +708,7 @@ func TestLbmDnsService_GetRecord(t *testing.T) {
 		},
 		{
 			name: "GIVEN not found response WHEN GetRecord SHOULD return nil output",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeResourceNotFound, "not found", nil),
 			}),
@@ -716,7 +716,7 @@ func TestLbmDnsService_GetRecord(t *testing.T) {
 		},
 		{
 			name: "GIVEN invalid response WHEN GetRecord SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", nil),
 			}),
@@ -735,7 +735,7 @@ func TestLbmDnsService_GetRecord(t *testing.T) {
 				assert.Nil(t, actual)
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok {
 				assert.Equal(t, testLbmDnsRecordId, fake.getRecordId)
 			}
 		})
@@ -751,7 +751,7 @@ func TestLbmDnsService_GetLbmDnsDetail(t *testing.T) {
 	}{
 		{
 			name: "GIVEN successful response WHEN GetLbmDnsDetail SHOULD return dns detail output",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", buildLbmDnsResource()),
 			}),
@@ -768,7 +768,7 @@ func TestLbmDnsService_GetLbmDnsDetail(t *testing.T) {
 		},
 		{
 			name: "GIVEN not found response WHEN GetLbmDnsDetail SHOULD return nil output",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusOK, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeResourceNotFound, "not found", nil),
 			}),
@@ -776,7 +776,7 @@ func TestLbmDnsService_GetLbmDnsDetail(t *testing.T) {
 		},
 		{
 			name: "GIVEN invalid response WHEN GetLbmDnsDetail SHOULD return error",
-			service: NewLbmDnsService(&lbmDnsClientFake{
+			service: NewLbmDnsService(&mockLbmDnsClient{
 				getResp: buildGetRecordResponse(http.StatusInternalServerError, lbmdnsclient.StatusCodeSuccess,
 					lbmdnsclient.StatusCodeSuccess, "", nil),
 			}),
@@ -795,14 +795,14 @@ func TestLbmDnsService_GetLbmDnsDetail(t *testing.T) {
 				assert.Nil(t, actual)
 				assert.EqualError(t, err, tc.expectedErr)
 			}
-			if fake, ok := tc.service.client.(*lbmDnsClientFake); ok {
+			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok {
 				assert.Equal(t, testLbmDnsRecordId, fake.getRecordId)
 			}
 		})
 	}
 }
 
-type lbmDnsClientFake struct {
+type mockLbmDnsClient struct {
 	createResp          *lbmdnsclient.AsyncTaskResponse
 	createErr           error
 	deleteResp          *lbmdnsclient.AsyncTaskResponse
@@ -822,7 +822,7 @@ type lbmDnsClientFake struct {
 	taskId              string
 }
 
-func (f *lbmDnsClientFake) CreateIntranetDnsDomain(_ context.Context,
+func (f *mockLbmDnsClient) CreateIntranetDnsDomain(_ context.Context,
 	regionCode, serviceName, hostRecord, domainSuffix, ip string) (*lbmdnsclient.AsyncTaskResponse,
 	error) {
 	f.createInput = CreateLbmDnsInput{
@@ -835,7 +835,7 @@ func (f *lbmDnsClientFake) CreateIntranetDnsDomain(_ context.Context,
 	return f.createResp, f.createErr
 }
 
-func (f *lbmDnsClientFake) GetIntranetDnsDomainTaskStatus(_ context.Context,
+func (f *mockLbmDnsClient) GetIntranetDnsDomainTaskStatus(_ context.Context,
 	taskId string) (*lbmdnsclient.GetIntranetDnsDomainTaskStatusResponse, error) {
 	f.taskId = taskId
 	if f.taskStatusErr != nil {
@@ -849,20 +849,20 @@ func (f *lbmDnsClientFake) GetIntranetDnsDomainTaskStatus(_ context.Context,
 	return f.taskStatusResp, nil
 }
 
-func (f *lbmDnsClientFake) GetIntranetDnsDomain(_ context.Context,
+func (f *mockLbmDnsClient) GetIntranetDnsDomain(_ context.Context,
 	resourceId string) (*lbmdnsclient.GetIntranetDnsDomainResponse, error) {
 	f.getRecordId = resourceId
 	return f.getResp, f.getErr
 }
 
-func (f *lbmDnsClientFake) UpdateIntranetDnsDomain(_ context.Context,
+func (f *mockLbmDnsClient) UpdateIntranetDnsDomain(_ context.Context,
 	resourceId, ip string) (*lbmdnsclient.AsyncTaskResponse, error) {
 	f.updateRecordId = resourceId
 	f.updateIp = ip
 	return f.updateResp, f.updateErr
 }
 
-func (f *lbmDnsClientFake) DeleteIntranetDnsDomain(_ context.Context,
+func (f *mockLbmDnsClient) DeleteIntranetDnsDomain(_ context.Context,
 	resourceId string) (*lbmdnsclient.AsyncTaskResponse, error) {
 	f.deleteRecordId = resourceId
 	return f.deleteResp, f.deleteErr
@@ -911,12 +911,6 @@ func buildCreateLbmDnsInput() CreateLbmDnsInput {
 		DomainSuffix: "example.com",
 		EndpointIp:   testEndpointIp,
 	}
-}
-
-func canceledContext() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	return ctx
 }
 
 func buildLbmDnsResource() *lbmdnsclient.IntranetDnsDomainResource {

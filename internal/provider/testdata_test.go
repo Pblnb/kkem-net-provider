@@ -23,6 +23,9 @@ const (
 	testVpcepEndpointId   = "endpoint-1"
 	testVpcepEndpointIp   = "10.0.0.8"
 	testLbmDnsRecordId    = "dns-record-1"
+	testSniProxyID        = "sni-1"
+	testVpcepID           = "vpcep-1"
+	testDnsID             = "dns-1"
 )
 
 func testVpcepServicePorts() []vpcepServicePortBlock {

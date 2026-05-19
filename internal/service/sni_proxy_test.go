@@ -50,9 +50,9 @@ func TestNewSniProxyService(t *testing.T) {
 func TestSniProxyService_AccessSniProxy(t *testing.T) {
 	ctx := context.Background()
 	testInput := AccessSniProxyInput{
-		RegionCode:       mockRegionCode,
-		ServiceName:      mockServiceName,
-		IamDomainAccount: []string{mockIamDomainAccount},
+		RegionCode:       testSniProxyRegionCode,
+		ServiceName:      testSniProxyServiceName,
+		IamDomainAccount: []string{testSniProxyIamDomainAccount},
 	}
 
 	testCases := []struct {
@@ -76,17 +76,17 @@ func TestSniProxyService_AccessSniProxy(t *testing.T) {
 				HTTPStatusCode: 200,
 				Body: sniproxyclient.AccessServiceResponseBody{
 					BaseResponse: sniproxyclient.BaseResponse{Code: 0},
-					Data:         sniproxyclient.AccessServiceResponseData{ResourceId: mockResourceId},
+					Data:         sniproxyclient.AccessServiceResponseData{ResourceId: testSniProxyResourceId},
 				},
 			}},
 			getResult: &getResult{resp: &sniproxyclient.GetAccessServiceResponse{
 				HTTPStatusCode: 200,
 				Body: sniproxyclient.GetAccessServiceResponseBody{
 					BaseResponse: sniproxyclient.BaseResponse{Code: 0},
-					Data:         sniproxyclient.AccessServiceResponseData{ResourceId: mockResourceId},
+					Data:         sniproxyclient.AccessServiceResponseData{ResourceId: testSniProxyResourceId},
 				},
 			}},
-			expectedRes: mockResourceId,
+			expectedRes: testSniProxyResourceId,
 		},
 		{
 			name:           "GIVEN retry failure WHEN AccessSniProxy SHOULD return retry error",
@@ -184,13 +184,13 @@ func TestSniProxyService_DeleteSniProxy(t *testing.T) {
 		},
 		{
 			name:           "GIVEN nil client WHEN DeleteSniProxy SHOULD return error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			clientNil:      true,
 			expectedErrMsg: "sni proxy client is not initialized",
 		},
 		{
 			name:       "GIVEN successful delete WHEN DeleteSniProxy SHOULD return nil",
-			resourceId: mockResourceId,
+			resourceId: testSniProxyResourceId,
 			deleteResult: deleteResult{resp: &sniproxyclient.DeleteAccessServiceResponse{
 				HTTPStatusCode: 200,
 				Body:           sniproxyclient.BaseResponse{Code: 0},
@@ -198,19 +198,19 @@ func TestSniProxyService_DeleteSniProxy(t *testing.T) {
 		},
 		{
 			name:           "GIVEN retry failure WHEN DeleteSniProxy SHOULD return error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			deleteResult:   deleteResult{err: errors.New("network timeout")},
 			expectedErrMsg: "call DeleteAccessService API failed",
 		},
 		{
 			name:           "GIVEN nil response WHEN DeleteSniProxy SHOULD return error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			deleteResult:   deleteResult{resp: nil},
 			expectedErrMsg: "response is nil",
 		},
 		{
 			name:       "GIVEN HTTP error WHEN DeleteSniProxy SHOULD return HTTP error",
-			resourceId: mockResourceId,
+			resourceId: testSniProxyResourceId,
 			deleteResult: deleteResult{resp: &sniproxyclient.DeleteAccessServiceResponse{
 				HTTPStatusCode: 500,
 			}},
@@ -218,7 +218,7 @@ func TestSniProxyService_DeleteSniProxy(t *testing.T) {
 		},
 		{
 			name:       "GIVEN business error WHEN DeleteSniProxy SHOULD return business error",
-			resourceId: mockResourceId,
+			resourceId: testSniProxyResourceId,
 			deleteResult: deleteResult{resp: &sniproxyclient.DeleteAccessServiceResponse{
 				HTTPStatusCode: 200,
 				Body:           sniproxyclient.BaseResponse{Code: 1, Msg: "business error"},
@@ -299,12 +299,12 @@ func TestSniProxyService_checkAccessReady(t *testing.T) {
 				Body: sniproxyclient.GetAccessServiceResponseBody{
 					BaseResponse: sniproxyclient.BaseResponse{Code: 0},
 					Data: sniproxyclient.AccessServiceResponseData{
-						ResourceId:       mockResourceId,
-						ServiceName:      mockServiceName,
-						AccessObject:     mockAccessObject,
-						RegionCode:       mockRegionCode,
-						IamDomainAccount: []string{mockIamDomainAccount},
-						EpServiceIds:     []sniproxyclient.EpServiceInfo{{EpServiceId: mockEpServiceId}},
+						ResourceId:       testSniProxyResourceId,
+						ServiceName:      testSniProxyServiceName,
+						AccessObject:     testSniProxyAccessObject,
+						RegionCode:       testSniProxyRegionCode,
+						IamDomainAccount: []string{testSniProxyIamDomainAccount},
+						EpServiceIds:     []sniproxyclient.EpServiceInfo{{EpServiceId: testSniProxyEpServiceId}},
 					},
 				},
 			}},
@@ -318,7 +318,7 @@ func TestSniProxyService_checkAccessReady(t *testing.T) {
 			mockClient.addGetResult(tc.getResult)
 			service := NewSniProxyService(mockClient)
 
-			out, err := service.checkAccessReady(context.Background(), mockResourceId)
+			out, err := service.checkAccessReady(context.Background(), testSniProxyResourceId)
 
 			if tc.expectedErrMsg != "" {
 				assert.Error(t, err)
@@ -326,8 +326,8 @@ func TestSniProxyService_checkAccessReady(t *testing.T) {
 			} else {
 				assert.Nil(t, err)
 				assert.NotNil(t, out)
-				assert.Equal(t, mockResourceId, out.ResourceId)
-				assert.Equal(t, []string{mockEpServiceId}, out.EpServiceIds)
+				assert.Equal(t, testSniProxyResourceId, out.ResourceId)
+				assert.Equal(t, []string{testSniProxyEpServiceId}, out.EpServiceIds)
 			}
 		})
 	}
@@ -412,7 +412,7 @@ func TestSniProxyService_waitForSniProxyAccessReady(t *testing.T) {
 
 			go func() {
 				defer close(done)
-				out, err = service.waitForSniProxyAccessReady(ctx, mockResourceId)
+				out, err = service.waitForSniProxyAccessReady(ctx, testSniProxyResourceId)
 			}()
 
 			if tc.cancelAfterMs > 0 {
@@ -452,23 +452,23 @@ func TestSniProxyService_GetSniProxy(t *testing.T) {
 		{
 			name:           "GIVEN nil client WHEN GetSniProxy SHOULD return error",
 			clientNil:      true,
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			expectedErrMsg: "sni proxy client is not initialized",
 		},
 		{
 			name:       "GIVEN successful query WHEN GetSniProxy SHOULD return output",
-			resourceId: mockResourceId,
+			resourceId: testSniProxyResourceId,
 			getResult: getResult{resp: &sniproxyclient.GetAccessServiceResponse{
 				HTTPStatusCode: 200,
 				Body: sniproxyclient.GetAccessServiceResponseBody{
 					BaseResponse: sniproxyclient.BaseResponse{Code: 0},
 					Data: sniproxyclient.AccessServiceResponseData{
-						ResourceId:       mockResourceId,
-						ServiceName:      mockServiceName,
-						AccessObject:     mockAccessObject,
-						RegionCode:       mockRegionCode,
-						IamDomainAccount: []string{mockIamDomainAccount},
-						EpServiceIds:     []sniproxyclient.EpServiceInfo{{EpServiceId: mockEpServiceId}},
+						ResourceId:       testSniProxyResourceId,
+						ServiceName:      testSniProxyServiceName,
+						AccessObject:     testSniProxyAccessObject,
+						RegionCode:       testSniProxyRegionCode,
+						IamDomainAccount: []string{testSniProxyIamDomainAccount},
+						EpServiceIds:     []sniproxyclient.EpServiceInfo{{EpServiceId: testSniProxyEpServiceId}},
 					},
 				},
 			}},
@@ -476,25 +476,25 @@ func TestSniProxyService_GetSniProxy(t *testing.T) {
 		},
 		{
 			name:           "GIVEN retry failure WHEN GetSniProxy SHOULD return error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			getResult:      getResult{err: errors.New("network timeout")},
 			expectedErrMsg: "call GetAccessService API failed",
 		},
 		{
 			name:           "GIVEN nil response WHEN GetSniProxy SHOULD return error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			getResult:      getResult{resp: nil},
 			expectedErrMsg: "response is nil",
 		},
 		{
 			name:           "GIVEN HTTP error WHEN GetSniProxy SHOULD return HTTP error",
-			resourceId:     mockResourceId,
+			resourceId:     testSniProxyResourceId,
 			getResult:      getResult{resp: &sniproxyclient.GetAccessServiceResponse{HTTPStatusCode: 404}},
 			expectedErrMsg: "httpStatusCode=404",
 		},
 		{
 			name:       "GIVEN not exist code WHEN GetSniProxy SHOULD return not exist error",
-			resourceId: mockResourceId,
+			resourceId: testSniProxyResourceId,
 			getResult: getResult{resp: &sniproxyclient.GetAccessServiceResponse{
 				HTTPStatusCode: 200,
 				Body:           sniproxyclient.GetAccessServiceResponseBody{BaseResponse: sniproxyclient.BaseResponse{Code: 6082, Msg: "not exist"}},
@@ -534,9 +534,9 @@ func TestSniProxyService_GetSniProxy(t *testing.T) {
 
 			if tc.expectedOutput {
 				assert.NotNil(t, out)
-				assert.Equal(t, mockResourceId, out.ResourceId)
+				assert.Equal(t, testSniProxyResourceId, out.ResourceId)
 				if len(out.EpServiceIds) > 0 {
-					assert.Equal(t, []string{mockEpServiceId}, out.EpServiceIds)
+					assert.Equal(t, []string{testSniProxyEpServiceId}, out.EpServiceIds)
 				}
 			} else {
 				assert.Nil(t, out)
