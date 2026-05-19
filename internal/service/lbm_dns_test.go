@@ -34,7 +34,6 @@ func TestNewLbmDnsService(t *testing.T) {
 }
 
 func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
-	apiErr := errors.New("create failed")
 	testCases := []struct {
 		name         string
 		ctx          context.Context
@@ -100,10 +99,10 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 			expectedCall: true,
 		},
 		{
-			name: "GIVEN canceled context and create api error WHEN CreateIntranetDnsDomain SHOULD return wrapped context error",
+			name: "GIVEN create api error and canceled context WHEN CreateIntranetDnsDomain SHOULD return wrapped context error",
 			ctx:  canceledContext(),
 			service: NewLbmDnsService(&mockLbmDnsClient{
-				createErr: apiErr,
+				createErr: errors.New("create failed"),
 			}),
 			expectedErr:  "create IntranetDnsDomain record failed after retries: context canceled",
 			expectedCall: true,
@@ -182,7 +181,6 @@ func TestLbmDnsService_waitForLbmDnsRecordReady(t *testing.T) {
 }
 
 func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
-	apiErr := errors.New("query failed")
 	testCases := []struct {
 		name        string
 		ctx         context.Context
@@ -232,7 +230,7 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 		{
 			name: "GIVEN query api errors beyond tolerance WHEN waitForTaskCompleted SHOULD return query error",
 			service: newFastLbmDnsService(&mockLbmDnsClient{
-				taskStatusErr: apiErr,
+				taskStatusErr: errors.New("query failed"),
 			}),
 			expectedErr: "query lbm-dns task status failed: query failed",
 		},
@@ -282,7 +280,6 @@ func TestLbmDnsService_waitForTaskCompleted(t *testing.T) {
 }
 
 func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
-	apiErr := errors.New("delete failed")
 	testCases := []struct {
 		name         string
 		ctx          context.Context
@@ -359,10 +356,10 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 			expectedCall: true,
 		},
 		{
-			name: "GIVEN canceled context and delete api error WHEN DeleteIntranetDnsDomain SHOULD return wrapped context error",
+			name: "GIVEN delete api error and canceled context WHEN DeleteIntranetDnsDomain SHOULD return wrapped context error",
 			ctx:  canceledContext(),
 			service: NewLbmDnsService(&mockLbmDnsClient{
-				deleteErr: apiErr,
+				deleteErr: errors.New("delete failed"),
 			}),
 			expectedErr:  "call DeleteIntranetDnsDomain API failed: context canceled",
 			expectedCall: true,
@@ -391,7 +388,6 @@ func TestLbmDnsService_DeleteIntranetDnsDomain(t *testing.T) {
 }
 
 func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
-	apiErr := errors.New("update failed")
 	testCases := []struct {
 		name         string
 		ctx          context.Context
@@ -468,10 +464,10 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 			expectedCall: true,
 		},
 		{
-			name: "GIVEN canceled context and update api error WHEN UpdateRecordValue SHOULD return wrapped context error",
+			name: "GIVEN update api error and canceled context WHEN UpdateRecordValue SHOULD return wrapped context error",
 			ctx:  canceledContext(),
 			service: NewLbmDnsService(&mockLbmDnsClient{
-				updateErr: apiErr,
+				updateErr: errors.New("update failed"),
 			}),
 			expectedErr:  "call UpdateIntranetDnsDomain API failed: context canceled",
 			expectedCall: true,
@@ -549,7 +545,6 @@ func Test_isLbmDnsNoChanges(t *testing.T) {
 
 func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 	resource := buildLbmDnsResource()
-	apiErr := errors.New("query failed")
 	testCases := []struct {
 		name             string
 		ctx              context.Context
@@ -607,10 +602,10 @@ func TestLbmDnsService_getLbmDnsRawResponse(t *testing.T) {
 			expectedCall: true,
 		},
 		{
-			name: "GIVEN canceled context and query api error WHEN getLbmDnsRawResponse SHOULD return wrapped context error",
+			name: "GIVEN query api error and canceled context WHEN getLbmDnsRawResponse SHOULD return wrapped context error",
 			ctx:  canceledContext(),
 			service: NewLbmDnsService(&mockLbmDnsClient{
-				getErr: apiErr,
+				getErr: errors.New("query failed"),
 			}),
 			expectedErr:  "call GetIntranetDnsDomain API failed: context canceled",
 			expectedCall: true,
