@@ -18,7 +18,6 @@ import (
 
 const (
 	testLbmDnsRecordId = "dns-record-1"
-	testEndpointIp     = "10.0.0.8"
 	testLbmDnsTaskId   = "task-1"
 )
 
@@ -52,7 +51,7 @@ func TestLbmDnsService_CreateIntranetDnsDomain(t *testing.T) {
 			}),
 			expected: &CreateLbmDnsOutput{
 				RecordId:     testLbmDnsRecordId,
-				RecordValues: []LbmDnsRecordValue{{RecordType: "A", RecordValue: testEndpointIp}},
+				RecordValues: []LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 			},
 			expectedCall: true,
 		},
@@ -481,7 +480,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 				ctx = tc.ctx
 			}
 
-			err := tc.service.UpdateRecordValue(ctx, testLbmDnsRecordId, testEndpointIp)
+			err := tc.service.UpdateRecordValue(ctx, testLbmDnsRecordId, testVpcepEndpointIp)
 
 			if tc.expectedErr == "" {
 				assert.NoError(t, err)
@@ -490,7 +489,7 @@ func TestLbmDnsService_UpdateRecordValue(t *testing.T) {
 			}
 			if fake, ok := tc.service.client.(*mockLbmDnsClient); ok && tc.expectedCall {
 				assert.Equal(t, testLbmDnsRecordId, fake.updateRecordId)
-				assert.Equal(t, testEndpointIp, fake.updateIp)
+				assert.Equal(t, testVpcepEndpointIp, fake.updateIp)
 			}
 		})
 	}
@@ -645,11 +644,11 @@ func Test_extractLbmDnsRecordValues(t *testing.T) {
 		{
 			name: "GIVEN record values WHEN extractLbmDnsRecordValues SHOULD return converted record values",
 			data: buildLbmDnsResourceWithValues([]lbmdnsclient.IntranetDnsRecordValue{
-				{RecordType: "A", RecordValue: testEndpointIp},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
 				{RecordType: "AAAA", RecordValue: "::1"},
 			}),
 			expected: []LbmDnsRecordValue{
-				{RecordType: "A", RecordValue: testEndpointIp},
+				{RecordType: "A", RecordValue: testVpcepEndpointIp},
 				{RecordType: "AAAA", RecordValue: "::1"},
 			},
 		},
@@ -697,7 +696,7 @@ func TestLbmDnsService_GetRecord(t *testing.T) {
 			expected: &CreateLbmDnsOutput{
 				RecordId: testLbmDnsRecordId,
 				RecordValues: []LbmDnsRecordValue{
-					{RecordType: "A", RecordValue: testEndpointIp},
+					{RecordType: "A", RecordValue: testVpcepEndpointIp},
 				},
 			},
 		},
@@ -757,7 +756,7 @@ func TestLbmDnsService_GetLbmDnsDetail(t *testing.T) {
 				HostRecord:   "api",
 				DomainSuffix: "example.com",
 				RecordValues: []LbmDnsRecordValue{
-					{RecordType: "A", RecordValue: testEndpointIp},
+					{RecordType: "A", RecordValue: testVpcepEndpointIp},
 				},
 			},
 		},
@@ -904,13 +903,13 @@ func buildCreateLbmDnsInput() CreateLbmDnsInput {
 		ServiceName:  "service-1",
 		HostRecord:   "api",
 		DomainSuffix: "example.com",
-		EndpointIp:   testEndpointIp,
+		EndpointIp:   testVpcepEndpointIp,
 	}
 }
 
 func buildLbmDnsResource() *lbmdnsclient.IntranetDnsDomainResource {
 	return buildLbmDnsResourceWithValues([]lbmdnsclient.IntranetDnsRecordValue{
-		{RecordType: "A", RecordValue: testEndpointIp},
+		{RecordType: "A", RecordValue: testVpcepEndpointIp},
 	})
 }
 

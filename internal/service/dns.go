@@ -29,12 +29,18 @@ type DnsServiceClient interface {
 
 // DnsService - DNS service 层
 type DnsService struct {
-	client DnsServiceClient
+	client          DnsServiceClient
+	pollingInterval time.Duration
+	pollingTimeout  time.Duration
 }
 
 // NewDnsService - 构造函数
 func NewDnsService(client DnsServiceClient) *DnsService {
-	return &DnsService{client: client}
+	return &DnsService{
+		client:          client,
+		pollingInterval: pollingInterval,
+		pollingTimeout:  pollingTimeout,
+	}
 }
 
 // DnsZoneInput - 创建 Private Zone 的输入参数
@@ -88,6 +94,9 @@ func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) 
 		return "", fmt.Errorf("createPrivateZone API failed after retries: %w", err)
 	}
 
+	if createResp == nil {
+		return "", fmt.Errorf("createPrivateZone returned nil response")
+	}
 	if createResp.Id == nil {
 		return "", fmt.Errorf("createPrivateZone response has no ID")
 	}
@@ -106,8 +115,8 @@ func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) 
 
 // waitForZoneReady 轮询等待 Private Zone 状态变为 ACTIVE
 func (s *DnsService) waitForZoneReady(ctx context.Context, zoneId string) error {
-	timeout := time.After(pollingTimeout)
-	ticker := time.NewTicker(pollingInterval)
+	timeout := time.After(s.pollingTimeout)
+	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
 
 	errCount := 0
@@ -194,6 +203,9 @@ func (s *DnsService) CreateRecordSet(ctx context.Context, input DnsRecordSetInpu
 		return "", fmt.Errorf("createRecordSetWithLine API failed after retries: %w", err)
 	}
 
+	if createResp == nil {
+		return "", fmt.Errorf("createRecordSetWithLine returned nil response")
+	}
 	if createResp.Id == nil {
 		return "", fmt.Errorf("createRecordSetWithLine response has no ID")
 	}
