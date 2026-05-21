@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 )
 
 // 通用测试数据/函数
@@ -22,18 +23,9 @@ func canceledContext() context.Context {
 	return ctx
 }
 
-// VPCEP 测试数据/函数
+// VPCEP 通用测试数据/函数
 const (
-	testSubnetId = "subnet-1"
-	testVpcId    = "vpc-1"
-
-	testVpcepServiceId           = "service-1"
-	testVpcepServicePortId       = "port-1"
-	testVpcepServicePermission   = "iam:domain::domain-1"
-	testVpcepServicePermissionId = "permission-1"
-
-	testVpcepEndpointId = "endpoint-1"
-	testVpcepEndpointIp = "10.0.0.8"
+	testVpcId = "vpc-1"
 
 	testVpcepNotFoundErrorCode = "EndPoint.0005"
 )
@@ -42,6 +34,29 @@ var vpcepNotFoundError = &sdkerr.ServiceResponseError{
 	StatusCode: http.StatusNotFound,
 	ErrorCode:  testVpcepNotFoundErrorCode,
 }
+
+// VPCEP Service 测试数据/函数
+const (
+	testVpcepServiceId     = "service-1"
+	testVpcepServicePortId = "port-1"
+
+	testVpcepServicePermission      = "iam:domain::domain-1"
+	testVpcepServicePermissionId    = "permission-1"
+	testVpcepServiceExtraPermission = "iam:domain::extra"
+)
+
+var (
+	testVpcepServiceClientPort  = int32(80)
+	testVpcepServiceServerPort  = int32(8080)
+	testVpcepServiceTcpProtocol = model.GetPortListProtocolEnum().TCP
+)
+
+// VPCEP Endpoint 测试数据/函数
+const (
+	testSubnetId        = "subnet-1"
+	testVpcepEndpointId = "endpoint-1"
+	testVpcepEndpointIp = "10.0.0.8"
+)
 
 // SNI Proxy 测试数据/函数
 const (
