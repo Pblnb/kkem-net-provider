@@ -166,6 +166,7 @@ func TestNewDnsService(t *testing.T) {
 	assert.Equal(t, fake, actual.client)
 	assert.Equal(t, pollingInterval, actual.pollingInterval)
 	assert.Equal(t, pollingTimeout, actual.pollingTimeout)
+	assert.Equal(t, retryBaseDelay, actual.retryBaseDelay)
 }
 
 func TestDnsService_CreatePrivateZone(t *testing.T) {
@@ -728,6 +729,7 @@ func newFastPollingDnsService(client DnsServiceClient) *DnsService {
 	service := NewDnsService(client)
 	service.pollingInterval = time.Nanosecond
 	service.pollingTimeout = time.Second
+	service.retryBaseDelay = time.Nanosecond
 	return service
 }
 
