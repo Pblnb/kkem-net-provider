@@ -32,6 +32,7 @@ type DnsService struct {
 	client          DnsServiceClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
+	retryBaseDelay  time.Duration
 }
 
 // NewDnsService - 构造函数
@@ -40,6 +41,7 @@ func NewDnsService(client DnsServiceClient) *DnsService {
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
+		retryBaseDelay:  retryBaseDelay,
 	}
 }
 
@@ -80,7 +82,7 @@ func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) 
 	})
 
 	var createResp *model.CreatePrivateZoneResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		createResp, innerErr = s.client.CreatePrivateZone(createReq)
 		if innerErr != nil {
@@ -189,7 +191,7 @@ func (s *DnsService) CreateRecordSet(ctx context.Context, input DnsRecordSetInpu
 	})
 
 	var createResp *model.CreateRecordSetWithLineResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		createResp, innerErr = s.client.CreateRecordSetWithLine(createReq)
 		if innerErr != nil {
@@ -228,7 +230,7 @@ func (s *DnsService) DeletePrivateZone(ctx context.Context, zoneId string) error
 		"zone_id": zoneId,
 	})
 
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		_, innerErr := s.client.DeletePrivateZone(deleteReq)
 		if innerErr != nil {
 			if isDnsNotFoundError(innerErr) {
@@ -253,7 +255,7 @@ func (s *DnsService) DeletePrivateZone(ctx context.Context, zoneId string) error
 // GetPrivateZone - 查询 Private Zone，不存在时返回 nil, nil
 func (s *DnsService) GetPrivateZone(ctx context.Context, zoneId string) (*DnsZoneOutput, error) {
 	var getResp *model.ShowPrivateZoneResponse
-	err := retryWithBackoff(ctx, maxRetryCount, retryBaseDelay, func() error {
+	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
 		getResp, innerErr = s.client.ShowPrivateZone(&model.ShowPrivateZoneRequest{ZoneId: zoneId})
 		if isDnsNotFoundError(innerErr) {
