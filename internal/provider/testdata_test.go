@@ -13,8 +13,9 @@ const (
 	testM3VpcId           = "m3-vpc-1"
 	testM3ServerType      = "LB"
 	testM3PortId          = "port-1"
+	testM3SubnetId        = "m3-subnet-1"
 	testM1PlusVpcId       = "m1-vpc-1"
-	testM1PlusSubnetId    = "subnet-1"
+	testM1PlusSubnetId    = "m1-subnet-1"
 	testDnsDomain         = "api"
 	testDnsDomainSuffix   = "internal"
 	testLbmDnsServiceName = "service-name-1"
@@ -26,6 +27,9 @@ const (
 	testSniProxyID        = "sni-1"
 	testVpcepID           = "vpcep-1"
 	testDnsID             = "dns-1"
+	testDomainName        = "test.example.com"
+	testDomainAccount     = "account-1"
+	testServiceName       = "KKEM"
 )
 
 func testVpcepServicePorts() []vpcepServicePortBlock {
@@ -52,4 +56,16 @@ func testLbmDnsRecordValues(values []lbmDnsRecordValueBlock) types.List {
 		}))
 	}
 	return types.ListValueMust(lbmDnsRecordValueObjectType, elements)
+}
+
+func newTestPlan() netConnectM3ToM1Model {
+	return netConnectM3ToM1Model{
+		M3VpcID:               types.StringValue(testM3VpcId),
+		M3VpcEndpointSubnetId: types.StringValue(testM3SubnetId),
+		SniVpcepServerId:      types.StringValue(testVpcepServiceId),
+		M3DnsDomainName:       types.StringValue(testDomainName),
+		RegionCode:            types.StringValue(testRegionCode),
+		ServiceName:           types.StringValue(testServiceName),
+		DomainAccount:         types.StringValue(testDomainAccount),
+	}
 }
