@@ -95,6 +95,7 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 		},
 		Blocks: map[string]schema.Block{
 			"m1_plus": schema.SingleNestedBlock{
+				Description: "M1+ 云服务凭证配置",
 				Attributes: map[string]schema.Attribute{
 					"ak": schema.StringAttribute{
 						Required:    true,
@@ -113,6 +114,7 @@ func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 				},
 			},
 			"m3": schema.SingleNestedBlock{
+				Description: "M3 云服务凭证配置",
 				Attributes: map[string]schema.Attribute{
 					"ak": schema.StringAttribute{
 						Required:    true,
