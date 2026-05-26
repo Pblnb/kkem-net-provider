@@ -63,12 +63,12 @@ func NewKKEMProvider(version string) func() provider.Provider {
 	}
 }
 
-func (p *KkemProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+func (p *KkemProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "kkem"
 	resp.Version = p.version
 }
 
-func (p *KkemProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *KkemProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"vpcep_endpoint": schema.StringAttribute{
@@ -253,11 +253,11 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	resp.DataSourceData = clients
 }
 
-func (p *KkemProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
+func (p *KkemProvider) DataSources(context.Context) []func() datasource.DataSource {
 	return nil
 }
 
-func (p *KkemProvider) Resources(ctx context.Context) []func() resource.Resource {
+func (p *KkemProvider) Resources(context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewNetConnectM1ToM3Resource,
 		NewNetConnectM3ToM1Resource,
