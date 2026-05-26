@@ -27,7 +27,7 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/service"
 )
 
-const resourceTypeName = "_net_connect_m1_to_m3"
+const m1ToM3ResourceTypeName = "_net_connect_m1_to_m3"
 
 var lbmDnsRecordValueAttrTypes = map[string]attr.Type{
 	"record_type":  types.StringType,
@@ -143,12 +143,12 @@ func requiredM1ToM3PortAttribute() schema.Int32Attribute {
 	}
 }
 
-func (r *netConnectM1ToM3Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
+func (r *netConnectM1ToM3Resource) Metadata(_ context.Context, req resource.MetadataRequest,
 	resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + resourceTypeName
+	resp.TypeName = req.ProviderTypeName + m1ToM3ResourceTypeName
 }
 
-func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.SchemaRequest,
+func (r *netConnectM1ToM3Resource) Schema(_ context.Context, _ resource.SchemaRequest,
 	resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
@@ -205,7 +205,7 @@ func (r *netConnectM1ToM3Resource) Schema(ctx context.Context, req resource.Sche
 	}
 }
 
-func (r *netConnectM1ToM3Resource) Configure(ctx context.Context, req resource.ConfigureRequest,
+func (r *netConnectM1ToM3Resource) Configure(_ context.Context, req resource.ConfigureRequest,
 	resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return

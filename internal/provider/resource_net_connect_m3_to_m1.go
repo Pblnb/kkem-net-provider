@@ -7,13 +7,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strings"
 
 	"huawei.com/kkem/kkem-net-provider/internal/client/sniproxyclient"
 	"huawei.com/kkem/kkem-net-provider/internal/service"
@@ -23,6 +24,8 @@ const (
 	dnsType      = "intranet_domain"
 	vpcepType    = "vpcep_endpoint"
 	sniProxyType = "sni_proxy"
+
+	m3ToM1ResourceTypeName = "_net_connect_m3_to_m1"
 )
 
 type netConnectM3ToM1Resource struct {
@@ -113,7 +116,7 @@ func NewNetConnectM3ToM1Resource() resource.Resource {
 
 func (r *netConnectM3ToM1Resource) Metadata(ctx context.Context, req resource.MetadataRequest,
 	resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_net_connect_m3_to_m1"
+	resp.TypeName = req.ProviderTypeName + m3ToM1ResourceTypeName
 }
 
 func (r *netConnectM3ToM1Resource) Configure(ctx context.Context, req resource.ConfigureRequest,
@@ -261,7 +264,8 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 	}
 
 	if !state.SniProxyResourceId.IsNull() {
-		output, getAccessServiceResponse, err := r.sniProxyService.GetSniProxy(ctx, state.SniProxyResourceId.ValueString())
+		output, getAccessServiceResponse, err := r.sniProxyService.GetSniProxy(ctx,
+			state.SniProxyResourceId.ValueString())
 		if getAccessServiceResponse != nil && sniproxyclient.IsNotExist(getAccessServiceResponse.Body.Code) {
 			tflog.Info(ctx, "sni-proxy-server not found, marking as null", map[string]any{
 				"ResourceId": state.SniProxyResourceId.ValueString(),
@@ -395,7 +399,8 @@ func (r *netConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 		if err := r.dnsService.DeletePrivateZone(ctx, state.M3DnsPrivateZoneId.ValueString()); err != nil {
 			resp.Diagnostics.AddError(
 				"Failed to delete old intranet domain",
-				fmt.Sprintf("Old domain ID %s could not be deleted: %s", state.M3DnsPrivateZoneId.ValueString(), err.Error()),
+				fmt.Sprintf("Old domain ID %s could not be deleted: %s", state.M3DnsPrivateZoneId.ValueString(),
+					err.Error()),
 			)
 		}
 

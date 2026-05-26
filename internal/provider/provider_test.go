@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	providerschema "github.com/hashicorp/terraform-plugin-framework/provider/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -329,6 +330,254 @@ func TestKkemProvider_buildDnsClient(t *testing.T) {
 	}
 }
 
+func TestKkemProvider_Configure(t *testing.T) {
+	const expectedEmptyClientEndpoint = "https://"
+
+	testCases := []struct {
+		name                     string
+		config                   func(t *testing.T, ctx context.Context) tfsdk.Config
+		expectedErrSummary       string
+		expectedLbmDnsEndpoint   string
+		expectedSniProxyEndpoint string
+		expectedClientToken      string
+	}{
+		{
+			name: "GIVEN valid config WHEN Configure SHOULD initialize all clients",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				return buildProviderConfig(t, ctx, validProviderModel())
+			},
+			expectedLbmDnsEndpoint:   testLbmDnsEndpoint,
+			expectedSniProxyEndpoint: testSniProxyEndpoint,
+			expectedClientToken:      testXOpenToken,
+		},
+		{
+			name: "GIVEN empty lbm dns endpoint WHEN Configure SHOULD create lbm dns client with empty endpoint",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.LbmDnsEndpoint = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedLbmDnsEndpoint:   expectedEmptyClientEndpoint,
+			expectedSniProxyEndpoint: testSniProxyEndpoint,
+			expectedClientToken:      testXOpenToken,
+		},
+		{
+			name: "GIVEN empty sni proxy endpoint WHEN Configure SHOULD create sni proxy client with empty endpoint",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.SniProxyEndpoint = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedLbmDnsEndpoint:   testLbmDnsEndpoint,
+			expectedSniProxyEndpoint: expectedEmptyClientEndpoint,
+			expectedClientToken:      testXOpenToken,
+		},
+		{
+			name: "GIVEN empty x open token WHEN Configure SHOULD create HTTP clients with empty token",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.XOpenToken = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedLbmDnsEndpoint:   testLbmDnsEndpoint,
+			expectedSniProxyEndpoint: testSniProxyEndpoint,
+			expectedClientToken:      "",
+		},
+		{
+			name: "GIVEN malformed config WHEN Configure SHOULD return config diagnostics",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				return buildMalformedProviderConfig(t, ctx)
+			},
+			expectedErrSummary: "Value Conversion Error",
+		},
+		{
+			name: "GIVEN empty M1 plus ak WHEN Configure SHOULD return M1 plus vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M1Plus.Ak = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M1+ VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty M1 plus sk WHEN Configure SHOULD return M1 plus vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M1Plus.Sk = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M1+ VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty M1 plus project id WHEN Configure SHOULD return M1 plus vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M1Plus.ProjectId = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M1+ VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty vpcep endpoint WHEN Configure SHOULD return M1 plus vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.VpcepEndpoint = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M1+ VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty M3 ak WHEN Configure SHOULD return M3 vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M3.Ak = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M3 VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty M3 sk WHEN Configure SHOULD return M3 vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M3.Sk = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M3 VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty M3 project id WHEN Configure SHOULD return M3 vpcep client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.M3.ProjectId = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M3 VPCEP client failed",
+		},
+		{
+			name: "GIVEN empty DNS endpoint WHEN Configure SHOULD return M3 DNS client error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.DnsEndpoint = ""
+				return buildProviderConfig(t, ctx, config)
+			},
+			expectedErrSummary: "create M3 DNS client failed",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			req := provider.ConfigureRequest{Config: tc.config(t, ctx)}
+			resp := &provider.ConfigureResponse{}
+
+			(&KkemProvider{}).Configure(ctx, req, resp)
+
+			if tc.expectedErrSummary == "" {
+				require.False(t, resp.Diagnostics.HasError())
+				resourceClients, ok := resp.ResourceData.(*clients)
+				require.True(t, ok)
+				dataSourceClients, ok := resp.DataSourceData.(*clients)
+				require.True(t, ok)
+				assert.Same(t, resourceClients, dataSourceClients)
+				assert.NotNil(t, resourceClients.m1PlusVpcepClient)
+				assert.NotNil(t, resourceClients.m3VpcepClient)
+				assert.NotNil(t, resourceClients.m3DnsClient)
+				assert.NotNil(t, resourceClients.lbmDnsClient)
+				assert.NotNil(t, resourceClients.sniProxyClient)
+				assert.Equal(t, tc.expectedLbmDnsEndpoint,
+					commonClientStringField(t, resourceClients.lbmDnsClient.Client,
+						"endpoint"))
+				assert.Equal(t, tc.expectedClientToken,
+					commonClientStringField(t, resourceClients.lbmDnsClient.Client,
+						"token"))
+				assert.Equal(t, tc.expectedSniProxyEndpoint,
+					commonClientStringField(t, resourceClients.sniProxyClient.Client,
+						"endpoint"))
+				assert.Equal(t, tc.expectedClientToken,
+					commonClientStringField(t, resourceClients.sniProxyClient.Client,
+						"token"))
+			} else {
+				require.True(t, resp.Diagnostics.HasError())
+				require.NotEmpty(t, resp.Diagnostics.Errors())
+				assert.Equal(t, tc.expectedErrSummary, resp.Diagnostics.Errors()[0].Summary())
+				assert.Nil(t, resp.ResourceData)
+				assert.Nil(t, resp.DataSourceData)
+			}
+		})
+	}
+}
+
+func TestKkemProvider_DataSources(t *testing.T) {
+	testCases := []struct {
+		name     string
+		provider *KkemProvider
+	}{
+		{
+			name:     "GIVEN provider WHEN DataSources SHOULD return nil",
+			provider: &KkemProvider{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := tc.provider.DataSources(context.Background())
+
+			assert.Nil(t, actual)
+		})
+	}
+}
+
+func TestKkemProvider_Resources(t *testing.T) {
+	const (
+		testM1ToM3ResourceTypeName = "_net_connect_m1_to_m3"
+		testM3ToM1ResourceTypeName = "_net_connect_m3_to_m1"
+	)
+
+	testCases := []struct {
+		name                  string
+		provider              *KkemProvider
+		expectedResourceNames []string
+	}{
+		{
+			name:     "GIVEN provider WHEN Resources SHOULD return network resources",
+			provider: &KkemProvider{},
+			expectedResourceNames: []string{testTypeName + testM1ToM3ResourceTypeName,
+				testTypeName + testM3ToM1ResourceTypeName},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := tc.provider.Resources(context.Background())
+
+			require.Len(t, actual, len(tc.expectedResourceNames))
+			remainingNames := make(map[string]struct{}, len(tc.expectedResourceNames))
+			for _, expectedName := range tc.expectedResourceNames {
+				remainingNames[expectedName] = struct{}{}
+			}
+			for _, resourceFactory := range actual {
+				resourceInstance := resourceFactory()
+				resp := &resource.MetadataResponse{}
+				resourceInstance.Metadata(context.Background(),
+					resource.MetadataRequest{ProviderTypeName: testTypeName}, resp)
+
+				_, ok := remainingNames[resp.TypeName]
+				require.True(t, ok, "unexpected or duplicate resource type: %s", resp.TypeName)
+				delete(remainingNames, resp.TypeName)
+				switch resp.TypeName {
+				case testTypeName + testM1ToM3ResourceTypeName:
+					_, ok = resourceInstance.(*netConnectM1ToM3Resource)
+					assert.True(t, ok)
+				case testTypeName + testM3ToM1ResourceTypeName:
+					_, ok = resourceInstance.(*netConnectM3ToM1Resource)
+					assert.True(t, ok)
+				}
+			}
+			assert.Empty(t, remainingNames)
+		})
+	}
+}
+
 func assertStringAttribute(t *testing.T, attrs map[string]providerschema.Attribute, name string,
 	required, sensitive bool) {
 	t.Helper()
@@ -444,8 +693,9 @@ func validProviderModel() kkemNetProviderModel {
 func commonClientStringField(t *testing.T, client any, fieldName string) string {
 	t.Helper()
 
+	// common.Client 未导出 endpoint/token，这里通过反射只校验 Configure 传入的配置是否被保留下来。
 	value := reflect.ValueOf(client)
-	require.Equal(t, reflect.Ptr, value.Kind())
+	require.Equal(t, reflect.Pointer, value.Kind())
 	field := value.Elem().FieldByName(fieldName)
 	require.True(t, field.IsValid(), "common client should contain %s", fieldName)
 	require.Equal(t, reflect.String, field.Kind())
