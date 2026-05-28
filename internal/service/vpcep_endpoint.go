@@ -62,6 +62,8 @@ func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInpu
 			EndpointServiceId: input.EndpointServiceId,
 			VpcId:             input.VpcId,
 			SubnetId:          &input.SubnetId,
+			Tags:              kkemVpcepTagsPtr(),
+			Description:       kkemResourceDescriptionPtr(),
 		},
 	}
 

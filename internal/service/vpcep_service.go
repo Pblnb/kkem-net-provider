@@ -101,6 +101,8 @@ func (s *VpcepService) Create(ctx context.Context, input VpcepServiceInput) (str
 			ServerType:      getServerType(input.ServerType),
 			ApprovalEnabled: boolPtr(false),
 			Ports:           ports,
+			Tags:            kkemVpcepTagsPtr(),
+			Description:     kkemResourceDescriptionPtr(),
 			IpVersion:       &ipVersion,
 		},
 	}

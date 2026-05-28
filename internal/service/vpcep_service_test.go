@@ -163,7 +163,11 @@ func TestVpcepService_Create(t *testing.T) {
 								ServerPort: &testVpcepServiceServerPort,
 								Protocol:   &testVpcepServiceTcpProtocol},
 						},
-						IpVersion: ptr(model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4),
+						Tags: &[]model.TagList{
+							{Key: ptr("creator"), Value: ptr("kkem")},
+						},
+						Description: ptr("Created by kkem-net-provider"),
+						IpVersion:   ptr(model.GetCreateEndpointServiceRequestBodyIpVersionEnum().IPV4),
 					},
 				}
 				assert.Equal(t, expectedReq, fake.createVpcepServiceReq)

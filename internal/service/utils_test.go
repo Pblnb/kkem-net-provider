@@ -16,6 +16,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func Test_kkemResourceDescriptionPtr(t *testing.T) {
+	actual := kkemResourceDescriptionPtr()
+
+	assert.NotNil(t, actual)
+	assert.Equal(t, "Created by kkem-net-provider", *actual)
+}
+
+func Test_kkemVpcepTagsPtr(t *testing.T) {
+	actual := kkemVpcepTagsPtr()
+
+	assert.NotNil(t, actual)
+	assert.Len(t, *actual, 1)
+	assert.NotNil(t, (*actual)[0].Key)
+	assert.NotNil(t, (*actual)[0].Value)
+	assert.Equal(t, "creator", *(*actual)[0].Key)
+	assert.Equal(t, "kkem", *(*actual)[0].Value)
+}
+
+func Test_kkemDnsTagsPtr(t *testing.T) {
+	actual := kkemDnsTagsPtr()
+
+	assert.NotNil(t, actual)
+	assert.Len(t, *actual, 1)
+	assert.NotNil(t, (*actual)[0].Value)
+	assert.Equal(t, "creator", (*actual)[0].Key)
+	assert.Equal(t, "kkem", *(*actual)[0].Value)
+}
+
 func Test_isVpcepNotFoundError(t *testing.T) {
 	const testVpcepNotFoundErrorCode = "EndPoint.0005"
 

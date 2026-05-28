@@ -153,6 +153,11 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 					assert.Equal(t, testVpcepServiceId, fake.createReq.Body.EndpointServiceId)
 					assert.Equal(t, testVpcId, fake.createReq.Body.VpcId)
 					assert.Equal(t, testSubnetId, *fake.createReq.Body.SubnetId)
+					expectedTags := []model.TagList{
+						{Key: ptr("creator"), Value: ptr("kkem")},
+					}
+					assert.Equal(t, &expectedTags, fake.createReq.Body.Tags)
+					assert.Equal(t, ptr("Created by kkem-net-provider"), fake.createReq.Body.Description)
 				}
 			}
 		})

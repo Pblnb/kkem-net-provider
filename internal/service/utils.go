@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
+	dnsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/dns/v2/model"
+	vpcepmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 )
 
 const (
@@ -18,6 +20,28 @@ const (
 	huaweiCloudDnsNotFoundErrorCode       = "DNS.0302"
 	huaweiCloudRecordSetNotFoundErrorCode = "DNS.0313"
 )
+
+const (
+	kkemResourceTagKey          = "creator"
+	kkemResourceTagValue        = "kkem"
+	kkemResourceDescriptionText = "Created by kkem-net-provider"
+)
+
+func kkemResourceDescriptionPtr() *string {
+	description := kkemResourceDescriptionText
+	return &description
+}
+
+func kkemVpcepTagsPtr() *[]vpcepmodel.TagList {
+	key := kkemResourceTagKey
+	value := kkemResourceTagValue
+	return &[]vpcepmodel.TagList{{Key: &key, Value: &value}}
+}
+
+func kkemDnsTagsPtr() *[]dnsmodel.Tag {
+	value := kkemResourceTagValue
+	return &[]dnsmodel.Tag{{Key: kkemResourceTagKey, Value: &value}}
+}
 
 // isVpcepNotFoundError 检查错误是否是华为云 VPCEP 服务的 not-found 错误。判断标准是 404 状态码 + "EndPoint.0005" 错误代码
 func isVpcepNotFoundError(err error) bool {

@@ -68,11 +68,13 @@ type DnsZoneOutput struct {
 func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) (string, error) {
 	createReq := &model.CreatePrivateZoneRequest{
 		Body: &model.CreatePrivateZoneReq{
-			Name:     input.DomainName,
-			ZoneType: dnsZoneType,
+			Name:        input.DomainName,
+			Description: kkemResourceDescriptionPtr(),
+			ZoneType:    dnsZoneType,
 			Router: &model.Router{
 				RouterId: input.RouterId,
 			},
+			Tags: kkemDnsTagsPtr(),
 		},
 	}
 
@@ -179,9 +181,11 @@ func (s *DnsService) CreateRecordSet(ctx context.Context, input DnsRecordSetInpu
 	createReq := &model.CreateRecordSetWithLineRequest{
 		ZoneId: input.ZoneId,
 		Body: &model.CreateRecordSetWithLineRequestBody{
-			Name:    input.Name,
-			Type:    dnsRecordSetType,
-			Records: &input.Records,
+			Name:        input.Name,
+			Description: kkemResourceDescriptionPtr(),
+			Type:        dnsRecordSetType,
+			Records:     &input.Records,
+			Tags:        kkemDnsTagsPtr(),
 		},
 	}
 

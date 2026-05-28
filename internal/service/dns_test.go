@@ -295,6 +295,11 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 					assert.Equal(t, testDomainName, req.Body.Name)
 					assert.Equal(t, dnsZoneType, req.Body.ZoneType)
 					assert.Equal(t, testRouterId, req.Body.Router.RouterId)
+					expectedTags := []model.Tag{
+						{Key: "creator", Value: ptr("kkem")},
+					}
+					assert.Equal(t, &expectedTags, req.Body.Tags)
+					assert.Equal(t, ptr("Created by kkem-net-provider"), req.Body.Description)
 				}
 			}
 		})
@@ -517,6 +522,11 @@ func TestDnsService_CreateRecordSet(t *testing.T) {
 					assert.Equal(t, testRecordName, req.Body.Name)
 					assert.Equal(t, dnsRecordSetType, req.Body.Type)
 					assert.Equal(t, &records, req.Body.Records)
+					expectedTags := []model.Tag{
+						{Key: "creator", Value: ptr("kkem")},
+					}
+					assert.Equal(t, &expectedTags, req.Body.Tags)
+					assert.Equal(t, ptr("Created by kkem-net-provider"), req.Body.Description)
 				}
 			}
 		})
