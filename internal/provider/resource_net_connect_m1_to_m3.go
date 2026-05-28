@@ -217,7 +217,7 @@ func (r *netConnectM1ToM3Resource) Configure(_ context.Context, req resource.Con
 		return
 	}
 	r.m1PlusVpcepService = service.NewVpcepEndpointService(clients.m1PlusVpcepClient)
-	r.m3VpcepService = service.NewVpcepService(clients.m3VpcepClient)
+	r.m3VpcepService = service.NewVpcepServiceService(clients.m3VpcepClient)
 	r.lbmDnsService = service.NewLbmDnsService(clients.lbmDnsClient)
 }
 
@@ -244,6 +244,17 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 		return
 	}
 
+	permissions := convertPermissions(plan.M3VpcepServicePermissions)
+	if err := r.m3VpcepService.AddPermissions(ctx, vpcepServiceId, permissions); err != nil {
+		resp.Diagnostics.AddError(fmt.Sprintf("add vpcep-service permission failed (vpcep_service_id: %s)",
+			vpcepServiceId), err.Error())
+		return
+	}
+	tflog.Info(ctx, "Vpcep service permission added", map[string]any{
+		"service_id":  vpcepServiceId,
+		"permissions": plan.M3VpcepServicePermissions,
+	})
+
 	vpcepEndpointId, endpointIp, err := r.createAndWaitVpcepEndpoint(ctx, &plan, vpcepServiceId)
 	if err != nil {
 		resp.Diagnostics.AddError("create vpcep-endpoint failed", err.Error())
@@ -253,9 +264,6 @@ func (r *netConnectM1ToM3Resource) Create(ctx context.Context, req resource.Crea
 	dnsRecordId, err := r.createAndWaitLbmDnsRecord(ctx, &plan, endpointIp)
 	if err != nil {
 		resp.Diagnostics.AddError("create lbm-dns record failed", err.Error())
-		return
-	}
-	if resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -282,18 +290,10 @@ func (r *netConnectM1ToM3Resource) createAndWaitVpcepService(ctx context.Context
 		return "", fmt.Errorf("create vpcep-service failed: %w", err)
 	}
 	plan.VpcepServiceId = types.StringValue(vpcepServiceId)
-	tflog.Info(ctx, "Step 1 completed: vpcep-service created and ready", map[string]any{
+	tflog.Info(ctx, "Vpcep service created and ready", map[string]any{
 		"service_id": vpcepServiceId,
 	})
 
-	permissions := convertPermissions(plan.M3VpcepServicePermissions)
-	if err := r.m3VpcepService.AddPermissions(ctx, vpcepServiceId, permissions); err != nil {
-		return "", fmt.Errorf("add vpcep-service permission failed: %w", err)
-	}
-	tflog.Info(ctx, "Step 2 completed: vpcep-service permission added", map[string]any{
-		"service_id":  vpcepServiceId,
-		"permissions": len(plan.M3VpcepServicePermissions),
-	})
 	return vpcepServiceId, nil
 }
 
@@ -380,12 +380,14 @@ func (r *netConnectM1ToM3Resource) rollbackCreate(ctx context.Context, plan *net
 				fmt.Errorf("delete vpcep-endpoint %s failed: %w", plan.VpcepEndpointId.ValueString(), err))
 		}
 	}
+
 	if !plan.VpcepServiceId.IsNull() {
 		if err := r.m3VpcepService.Delete(ctx, plan.VpcepServiceId.ValueString()); err != nil {
 			errs = append(errs,
 				fmt.Errorf("delete vpcep-service %s failed: %w", plan.VpcepServiceId.ValueString(), err))
 		}
 	}
+
 	return errs
 }
 
