@@ -34,17 +34,17 @@ const (
 	vpcepServiceStatusFailed    = "failed"
 )
 
-// VpcepService - VPCEP Service service 层
-type VpcepService struct {
+// VpcepServiceService - VPCEP Service 资源的 service 层封装。名称中的两个 Service 分别表示 VPCEP Service 资源和 Service 代码分层。
+type VpcepServiceService struct {
 	client          VpcepServiceClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 	retryBaseDelay  time.Duration
 }
 
-// NewVpcepService - 构造函数
-func NewVpcepService(client VpcepServiceClient) *VpcepService {
-	return &VpcepService{
+// NewVpcepServiceService - 构造 VPCEP Service 资源的 service 层实例。
+func NewVpcepServiceService(client VpcepServiceClient) *VpcepServiceService {
+	return &VpcepServiceService{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -82,7 +82,7 @@ type PermissionInput struct {
 }
 
 // Create - 创建 VPCEP Service 并等待就绪
-func (s *VpcepService) Create(ctx context.Context, input VpcepServiceInput) (string, error) {
+func (s *VpcepServiceService) Create(ctx context.Context, input VpcepServiceInput) (string, error) {
 	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	ports := make([]model.PortList, len(input.Ports))
 	for i := range input.Ports {
@@ -149,7 +149,7 @@ func (s *VpcepService) Create(ctx context.Context, input VpcepServiceInput) (str
 }
 
 // waitForReady 轮询等待 VPCEP Service 状态变为 available
-func (s *VpcepService) waitForReady(ctx context.Context, serviceId string) error {
+func (s *VpcepServiceService) waitForReady(ctx context.Context, serviceId string) error {
 	timeout := time.After(s.pollingTimeout)
 	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
@@ -180,7 +180,7 @@ func (s *VpcepService) waitForReady(ctx context.Context, serviceId string) error
 			errCount = 0
 
 			if getResp.Status == nil {
-				return fmt.Errorf("vpcep-service response has no status")
+				return fmt.Errorf("vpcep-service %s response has no status", serviceId)
 			}
 
 			status := *getResp.Status
@@ -210,7 +210,7 @@ func (s *VpcepService) waitForReady(ctx context.Context, serviceId string) error
 }
 
 // Delete - 删除 VPCEP Service
-func (s *VpcepService) Delete(ctx context.Context, serviceId string) error {
+func (s *VpcepServiceService) Delete(ctx context.Context, serviceId string) error {
 	deleteReq := &model.DeleteEndpointServiceRequest{
 		VpcEndpointServiceId: serviceId,
 	}
@@ -226,7 +226,8 @@ func (s *VpcepService) Delete(ctx context.Context, serviceId string) error {
 				return nil
 			}
 			tflog.Warn(ctx, "DeleteEndpointService API failed, retrying", map[string]any{
-				"error": innerErr.Error(),
+				"service_id": serviceId,
+				"error":      innerErr.Error(),
 			})
 		}
 		return innerErr
@@ -241,7 +242,8 @@ func (s *VpcepService) Delete(ctx context.Context, serviceId string) error {
 }
 
 // AddPermissions - 添加白名单权限
-func (s *VpcepService) AddPermissions(ctx context.Context, serviceId string, permissions []PermissionInput) error {
+func (s *VpcepServiceService) AddPermissions(ctx context.Context, serviceId string,
+	permissions []PermissionInput) error {
 	addPermissions := make([]model.EpsAddPermissionRequest, len(permissions))
 	for i := range permissions {
 		addPermissions[i] = model.EpsAddPermissionRequest{
@@ -265,7 +267,8 @@ func (s *VpcepService) AddPermissions(ctx context.Context, serviceId string, per
 		_, innerErr := s.client.BatchAddEndpointServicePermissions(req)
 		if innerErr != nil {
 			tflog.Warn(ctx, "BatchAddEndpointServicePermissions API failed, retrying", map[string]any{
-				"error": innerErr.Error(),
+				"service_id": serviceId,
+				"error":      innerErr.Error(),
 			})
 		}
 		return innerErr
@@ -282,7 +285,8 @@ func (s *VpcepService) AddPermissions(ctx context.Context, serviceId string, per
 }
 
 // ReconcilePermissions - 对比并同步权限列表
-func (s *VpcepService) ReconcilePermissions(ctx context.Context, serviceId string, desired []PermissionInput) error {
+func (s *VpcepServiceService) ReconcilePermissions(ctx context.Context, serviceId string,
+	desired []PermissionInput) error {
 	remote, err := s.GetPermissions(ctx, serviceId)
 	if err != nil {
 		return err
@@ -329,7 +333,8 @@ func (s *VpcepService) ReconcilePermissions(ctx context.Context, serviceId strin
 		_, innerErr := s.client.BatchRemoveEndpointServicePermissions(removeReq)
 		if innerErr != nil {
 			tflog.Warn(ctx, "BatchRemoveEndpointServicePermissions API failed, retrying", map[string]any{
-				"error": innerErr.Error(),
+				"service_id": serviceId,
+				"error":      innerErr.Error(),
 			})
 		}
 		return innerErr
@@ -346,7 +351,7 @@ func (s *VpcepService) ReconcilePermissions(ctx context.Context, serviceId strin
 }
 
 // GetPermissions - 查询当前权限列表，返回 map[permission]id
-func (s *VpcepService) GetPermissions(ctx context.Context, serviceId string) (map[string]string, error) {
+func (s *VpcepServiceService) GetPermissions(ctx context.Context, serviceId string) (map[string]string, error) {
 	var getResp *model.ListServicePermissionsDetailsResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
@@ -377,7 +382,7 @@ func (s *VpcepService) GetPermissions(ctx context.Context, serviceId string) (ma
 }
 
 // UpdateConfig - 更新 VPCEP Service 配置，仅支持更新 port_id 与 ports
-func (s *VpcepService) UpdateConfig(ctx context.Context, serviceId string, input VpcepServiceInput) error {
+func (s *VpcepServiceService) UpdateConfig(ctx context.Context, serviceId string, input VpcepServiceInput) error {
 	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	ports := make([]model.PortList, len(input.Ports))
 	for i := range input.Ports {
@@ -406,7 +411,8 @@ func (s *VpcepService) UpdateConfig(ctx context.Context, serviceId string, input
 		_, innerErr := s.client.UpdateEndpointService(updateReq)
 		if innerErr != nil {
 			tflog.Warn(ctx, "UpdateEndpointService API failed, retrying", map[string]any{
-				"error": innerErr.Error(),
+				"service_id": serviceId,
+				"error":      innerErr.Error(),
 			})
 		}
 		return innerErr
@@ -421,7 +427,7 @@ func (s *VpcepService) UpdateConfig(ctx context.Context, serviceId string, input
 }
 
 // Get - 查询 VPCEP Service 详情，不存在时返回 nil, nil
-func (s *VpcepService) Get(ctx context.Context, serviceId string) (*VpcepServiceOutput, error) {
+func (s *VpcepServiceService) Get(ctx context.Context, serviceId string) (*VpcepServiceOutput, error) {
 	serviceNotFound := false
 	var getResp *model.ListServiceDetailsResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {

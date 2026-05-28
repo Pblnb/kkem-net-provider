@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewVpcepService(t *testing.T) {
+func TestNewVpcepServiceService(t *testing.T) {
 	fake := &mockVpcepServiceClient{}
 
-	actual := NewVpcepService(fake)
+	actual := NewVpcepServiceService(fake)
 
 	assert.NotNil(t, actual)
 	assert.Equal(t, fake, actual.client)
@@ -33,7 +33,7 @@ func TestVpcepService_Create(t *testing.T) {
 	testCases := []struct {
 		name                             string
 		ctx                              context.Context
-		service                          *VpcepService
+		service                          *VpcepServiceService
 		makeRequestLogMarshalReturnError bool
 		expected                         string
 		expectedErr                      *string
@@ -91,7 +91,7 @@ func TestVpcepService_Create(t *testing.T) {
 		{
 			name: "GIVEN create api error and canceled context WHEN Create SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{{err: errors.New("create failed")}},
 			}),
 			expectedErr:         ptr("createEndpointService API failed after retries: context canceled"),
@@ -180,7 +180,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
-		service           *VpcepService
+		service           *VpcepServiceService
 		expectedErr       *string
 		expectedListCalls int
 	}{
@@ -247,7 +247,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 			service: newFastPollingVpcepService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: &model.ListServiceDetailsResponse{}}},
 			}),
-			expectedErr:       ptr("vpcep-service response has no status"),
+			expectedErr:       ptr(fmt.Sprintf("vpcep-service %s response has no status", testVpcepServiceId)),
 			expectedListCalls: 1,
 		},
 		{
@@ -288,20 +288,20 @@ func TestVpcepService_Delete(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
-		service             *VpcepService
+		service             *VpcepServiceService
 		expectedErr         *string
 		expectedDeleteCalls int
 	}{
 		{
 			name: "GIVEN delete api succeeds WHEN Delete SHOULD return nil",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				deleteResults: []vpcepServiceDeleteResult{{resp: &model.DeleteEndpointServiceResponse{}}},
 			}),
 			expectedDeleteCalls: 1,
 		},
 		{
 			name: "GIVEN service not found WHEN Delete SHOULD return nil",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				deleteResults: []vpcepServiceDeleteResult{{err: vpcepNotFoundError}},
 			}),
 			expectedDeleteCalls: 1,
@@ -319,7 +319,7 @@ func TestVpcepService_Delete(t *testing.T) {
 		{
 			name: "GIVEN delete api error and canceled context WHEN Delete SHOULD return context error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				deleteResults: []vpcepServiceDeleteResult{{err: errors.New("delete failed")}},
 			}),
 			expectedErr:         ptr("context canceled"),
@@ -367,13 +367,13 @@ func TestVpcepService_AddPermissions(t *testing.T) {
 	testCases := []struct {
 		name                        string
 		ctx                         context.Context
-		service                     *VpcepService
+		service                     *VpcepServiceService
 		expectedErr                 *string
 		expectedAddPermissionsCalls int
 	}{
 		{
 			name: "GIVEN permissions WHEN AddPermissions SHOULD call add api",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				addPermissionsResults: []vpcepServiceAddPermissionsResult{
 					{resp: &model.BatchAddEndpointServicePermissionsResponse{}},
 				},
@@ -393,7 +393,7 @@ func TestVpcepService_AddPermissions(t *testing.T) {
 		{
 			name: "GIVEN add api error and canceled context WHEN AddPermissions SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				addPermissionsResults: []vpcepServiceAddPermissionsResult{{err: errors.New("add failed")}},
 			}),
 			expectedErr:                 ptr("batchAddEndpointServicePermissions API failed after retries: context canceled"),
@@ -443,7 +443,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 	testCases := []struct {
 		name                           string
 		ctx                            context.Context
-		service                        *VpcepService
+		service                        *VpcepServiceService
 		desired                        []PermissionInput
 		expectedErr                    *string
 		expectedListPermissionsCalls   int
@@ -452,7 +452,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 	}{
 		{
 			name: "GIVEN desired adds and removes permissions WHEN ReconcilePermissions SHOULD sync permissions",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServiceExtraPermission)},
@@ -472,7 +472,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN remote permissions already match desired WHEN ReconcilePermissions SHOULD return nil",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId),
@@ -531,7 +531,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		{
 			name: "GIVEN permission query error and canceled context WHEN ReconcilePermissions SHOULD return error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{{err: errors.New("api failed")}},
 			}),
 			desired:                      []PermissionInput{{Permission: testVpcepServicePermission}},
@@ -541,7 +541,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		{
 			name: "GIVEN add permission api error and canceled context WHEN ReconcilePermissions SHOULD return error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{})},
 				},
@@ -555,7 +555,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		{
 			name: "GIVEN remove api error and canceled context WHEN ReconcilePermissions SHOULD return wrapped error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServiceExtraPermission)},
@@ -600,7 +600,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN remote permission without id WHEN ReconcilePermissions SHOULD return error",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Permission: ptr(testVpcepServiceExtraPermission)},
@@ -671,14 +671,14 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 	testCases := []struct {
 		name                         string
 		ctx                          context.Context
-		service                      *VpcepService
+		service                      *VpcepServiceService
 		expectedPermissions          map[string]string
 		expectedErr                  *string
 		expectedListPermissionsCalls int
 	}{
 		{
 			name: "GIVEN single permission response WHEN GetPermissions SHOULD return permission id map",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServicePermission)},
@@ -690,7 +690,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN multiple permissions response WHEN GetPermissions SHOULD return permission id map",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServicePermission)},
@@ -720,7 +720,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil permissions WHEN GetPermissions SHOULD return empty map",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: &model.ListServicePermissionsDetailsResponse{}},
 				},
@@ -730,7 +730,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN permission without id WHEN GetPermissions SHOULD return permission with empty id",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Permission: ptr(testVpcepServicePermission)},
@@ -743,7 +743,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		{
 			name: "GIVEN permission query error and canceled context WHEN GetPermissions SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{{err: errors.New("query failed")}},
 			}),
 			expectedErr:                  ptr("listServicePermissionsDetails API failed after retries: context canceled"),
@@ -793,7 +793,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
-		service           *VpcepService
+		service           *VpcepServiceService
 		input             VpcepServiceInput
 		expectedErr       *string
 		expectedUpdateReq *model.UpdateEndpointServiceRequest
@@ -885,7 +885,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		{
 			name: "GIVEN update api error and canceled context WHEN UpdateConfig SHOULD return wrapped context error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{err: errors.New("update failed")}},
 			}),
 			input:             buildVpcepServiceInput(),
@@ -951,14 +951,14 @@ func TestVpcepService_Get(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
-		service           *VpcepService
+		service           *VpcepServiceService
 		expected          *VpcepServiceOutput
 		expectedErr       *string
 		expectedListCalls int
 	}{
 		{
 			name: "GIVEN service detail response WHEN Get SHOULD return service output",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
 			expected: &VpcepServiceOutput{
@@ -997,7 +997,7 @@ func TestVpcepService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN service detail response with nil fields WHEN Get SHOULD return service id only",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: &model.ListServiceDetailsResponse{}}},
 			}),
 			expected:          &VpcepServiceOutput{ServiceId: testVpcepServiceId},
@@ -1005,7 +1005,7 @@ func TestVpcepService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN service detail response with partial nil fields WHEN Get SHOULD return non nil fields",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{
 					resp: &model.ListServiceDetailsResponse{
 						Status: ptr("available"),
@@ -1022,7 +1022,7 @@ func TestVpcepService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN service not found WHEN Get SHOULD return nil output",
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{err: vpcepNotFoundError}},
 			}),
 			expectedListCalls: 1,
@@ -1030,7 +1030,7 @@ func TestVpcepService_Get(t *testing.T) {
 		{
 			name: "GIVEN query api error and canceled context WHEN Get SHOULD return query error",
 			ctx:  canceledContext(),
-			service: NewVpcepService(&mockVpcepServiceClient{
+			service: NewVpcepServiceService(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{err: errors.New("query failed")}},
 			}),
 			expectedErr:       ptr("context canceled"),
@@ -1365,23 +1365,23 @@ func buildPermissionsResponse(permissions []model.PermissionObject) *model.ListS
 	return &model.ListServicePermissionsDetailsResponse{Permissions: &permissions}
 }
 
-func newFastPollingVpcepService(client VpcepServiceClient) *VpcepService {
-	service := NewVpcepService(client)
+func newFastPollingVpcepService(client VpcepServiceClient) *VpcepServiceService {
+	service := NewVpcepServiceService(client)
 	service.pollingInterval = time.Nanosecond
 	service.pollingTimeout = time.Second
 	service.retryBaseDelay = time.Nanosecond
 	return service
 }
 
-func newTimeoutPollingVpcepService(client VpcepServiceClient) *VpcepService {
-	service := NewVpcepService(client)
+func newTimeoutPollingVpcepService(client VpcepServiceClient) *VpcepServiceService {
+	service := NewVpcepServiceService(client)
 	service.pollingInterval = time.Hour
 	service.pollingTimeout = time.Nanosecond
 	return service
 }
 
-func newSlowPollingVpcepService(client VpcepServiceClient) *VpcepService {
-	service := NewVpcepService(client)
+func newSlowPollingVpcepService(client VpcepServiceClient) *VpcepServiceService {
+	service := NewVpcepServiceService(client)
 	service.pollingInterval = time.Hour
 	service.pollingTimeout = time.Hour
 	return service
