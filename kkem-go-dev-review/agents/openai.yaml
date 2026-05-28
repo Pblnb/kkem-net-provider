@@ -1,0 +1,4 @@
+interface:
+  display_name: "KKEM Go Dev Review"
+  short_description: "Develop Go changes with parallel KKEM expert review"
+  default_prompt: "Use kkem-go-dev-review to implement this Go development request, run KKEM-style tests, dispatch parallel expert reviewers, and close every review finding."
