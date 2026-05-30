@@ -1,0 +1,4 @@
+interface:
+  display_name: "KKEM Go Dev Review"
+  short_description: "Develop Go changes with KKEM-style review closure"
+  default_prompt: "Use kkem-go-dev-review to implement this Go development request, write tests following KKEM conventions, run verification, and close Reviewer findings one by one."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "KKEM Go Test Generate"
+  short_description: "Generate focused KKEM Go tests with table-driven cases."
+  default_prompt: "Use this skill to plan and implement KKEM Go unit tests in small, reviewable phases."

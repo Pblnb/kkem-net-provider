@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write MR Description"
+  short_description: "Draft focused MR Description content."
+  default_prompt: "Use $write-mr-description to draft the Description section from the current branch diff."

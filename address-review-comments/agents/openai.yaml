@@ -1,0 +1,4 @@
+interface:
+  display_name: "Address Review Comments"
+  short_description: "Handle inline cmt review comments."
+  default_prompt: "Use $address-review-comments to address inline cmt: review comments in the current workspace."
