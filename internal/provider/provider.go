@@ -7,11 +7,13 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -40,7 +42,7 @@ type kkemNetProviderModel struct {
 	// lbm-dns 认证 Token，接入 RF 后该参数由 Cube 传入，流水线用户不感知该参数
 	// TODO： 这部分参考 LBM 实现，后续接入 RF 后需要关注流水线传参是否有效
 	// 兜底策略：依赖 Cube\Fuxi 的隐私参数能力，用户使用流水线时传入
-	XOpenToken string `tfsdk:"x_open_token"`
+	XOpenToken types.String `tfsdk:"x_open_token"`
 }
 
 type clients struct {
@@ -88,7 +90,7 @@ func (p *KkemProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 				Description: "sni-proxy 服务 Endpoint（M3→M1 方向），如 https://linksniproxy-test.myhuaweicloud.com",
 			},
 			"x_open_token": schema.StringAttribute{
-				Required:    true,
+				Optional:    true,
 				Sensitive:   true,
 				Description: "lbm-dns API Token（x-open-token）",
 			},
@@ -209,6 +211,19 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
+	token := data.XOpenToken.ValueString()
+	if token == "" {
+		token = os.Getenv("KKEM_COA_TOKEN")
+	}
+
+	if token == "" {
+		resp.Diagnostics.AddError(
+			"Missing X-Open-Token",
+			"x_open_token must be provided in config or set via KKEM_COA_TOKEN environment variable.",
+		)
+		return
+	}
+
 	m1PlusVpcepClient, err := p.buildVpcepClient(ctx, "M1+", data.M1Plus.Ak, data.M1Plus.Sk, data.M1Plus.ProjectId,
 		data.VpcepEndpoint)
 	if err != nil {
@@ -229,9 +244,9 @@ func (p *KkemProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	// 初始化 lbm-dns Client（用于 m1->m3 资源）
-	lbmDnsClient := lbmdnsclient.NewDnsClient(data.LbmDnsEndpoint, data.XOpenToken)
+	lbmDnsClient := lbmdnsclient.NewDnsClient(data.LbmDnsEndpoint, token)
 
-	sniProxyClient := sniproxyclient.NewSniProxyClient(data.SniProxyEndpoint, data.XOpenToken)
+	sniProxyClient := sniproxyclient.NewSniProxyClient(data.SniProxyEndpoint, token)
 
 	clients := &clients{
 		m1PlusVpcepClient: m1PlusVpcepClient,

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 
@@ -39,6 +40,7 @@ const (
 	testM3Ak             = "m3-ak"
 	testM3Sk             = "m3-sk"
 	testM3ProjectId      = "m3-project-id"
+	testEnvToken         = testXOpenToken
 )
 
 func TestNewKKEMProvider(t *testing.T) {
@@ -121,7 +123,7 @@ func TestKkemProvider_Schema(t *testing.T) {
 			assertStringAttribute(t, resp.Schema.Attributes, "lbm_dns_endpoint", true, false)
 			assertStringAttribute(t, resp.Schema.Attributes, "dns_endpoint", true, false)
 			assertStringAttribute(t, resp.Schema.Attributes, "sni_proxy_endpoint", true, false)
-			assertStringAttribute(t, resp.Schema.Attributes, "x_open_token", true, true)
+			assertStringAttribute(t, resp.Schema.Attributes, "x_open_token", false, true)
 			assertCredentialBlock(t, resp.Schema.Blocks, "m1_plus")
 			assertCredentialBlock(t, resp.Schema.Blocks, "m3")
 		})
@@ -336,6 +338,7 @@ func TestKkemProvider_Configure(t *testing.T) {
 	testCases := []struct {
 		name                     string
 		config                   func(t *testing.T, ctx context.Context) tfsdk.Config
+		setupEnv                 func() func()
 		expectedErrSummary       string
 		expectedLbmDnsEndpoint   string
 		expectedSniProxyEndpoint string
@@ -373,15 +376,32 @@ func TestKkemProvider_Configure(t *testing.T) {
 			expectedClientToken:      testXOpenToken,
 		},
 		{
-			name: "GIVEN empty x open token WHEN Configure SHOULD create HTTP clients with empty token",
+			name: "GIVEN empty config token but valid env var WHEN Configure SHOULD use env var token",
 			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
 				config := validProviderModel()
-				config.XOpenToken = ""
+				config.XOpenToken = types.StringNull()
 				return buildProviderConfig(t, ctx, config)
+			},
+			setupEnv: func() func() {
+				require.NoError(t, os.Setenv("KKEM_COA_TOKEN", testEnvToken))
+				return func() { os.Unsetenv("KKEM_COA_TOKEN") }
 			},
 			expectedLbmDnsEndpoint:   testLbmDnsEndpoint,
 			expectedSniProxyEndpoint: testSniProxyEndpoint,
-			expectedClientToken:      "",
+			expectedClientToken:      testEnvToken,
+		},
+		{
+			name: "GIVEN empty config token and empty env var WHEN Configure SHOULD return error",
+			config: func(t *testing.T, ctx context.Context) tfsdk.Config {
+				config := validProviderModel()
+				config.XOpenToken = types.StringNull()
+				return buildProviderConfig(t, ctx, config)
+			},
+			setupEnv: func() func() {
+				require.NoError(t, os.Setenv("KKEM_COA_TOKEN", ""))
+				return func() { os.Unsetenv("KKEM_COA_TOKEN") }
+			},
+			expectedErrSummary: "Missing X-Open-Token",
 		},
 		{
 			name: "GIVEN malformed config WHEN Configure SHOULD return config diagnostics",
@@ -466,6 +486,11 @@ func TestKkemProvider_Configure(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				cleanup := tc.setupEnv()
+				defer cleanup()
+			}
+
 			ctx := context.Background()
 			req := provider.ConfigureRequest{Config: tc.config(t, ctx)}
 			resp := &provider.ConfigureResponse{}
@@ -619,7 +644,7 @@ func buildProviderConfig(t *testing.T, ctx context.Context, data kkemNetProvider
 		"lbm_dns_endpoint":   types.StringValue(data.LbmDnsEndpoint),
 		"dns_endpoint":       types.StringValue(data.DnsEndpoint),
 		"sni_proxy_endpoint": types.StringValue(data.SniProxyEndpoint),
-		"x_open_token":       types.StringValue(data.XOpenToken),
+		"x_open_token":       data.XOpenToken,
 		"m1_plus":            m1PlusValue,
 		"m3":                 m3Value,
 	})
@@ -686,7 +711,7 @@ func validProviderModel() kkemNetProviderModel {
 		LbmDnsEndpoint:   testLbmDnsEndpoint,
 		DnsEndpoint:      testDnsEndpoint,
 		SniProxyEndpoint: testSniProxyEndpoint,
-		XOpenToken:       testXOpenToken,
+		XOpenToken:       types.StringValue(testXOpenToken),
 	}
 }
 
