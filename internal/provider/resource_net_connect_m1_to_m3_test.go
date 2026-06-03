@@ -1255,7 +1255,7 @@ func Test_requiredM1ToM3PortAttribute(t *testing.T) {
 	}
 }
 
-func TestNormalizeM1ToM3ListState(t *testing.T) {
+func Test_normalizeM1ToM3ListState(t *testing.T) {
 	testCases := []struct {
 		name                string
 		inputPorts          []vpcepServicePortBlock
@@ -1308,7 +1308,7 @@ func TestNormalizeM1ToM3ListState(t *testing.T) {
 	}
 }
 
-func TestNormalizePortPairs(t *testing.T) {
+func Test_normalizePortPairs(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []service.PortPair
@@ -1378,7 +1378,7 @@ func TestNormalizePortPairs(t *testing.T) {
 	}
 }
 
-func TestNormalizeVpcepServicePortBlocks(t *testing.T) {
+func Test_normalizeVpcepServicePortBlocks(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePortBlock
@@ -1450,7 +1450,7 @@ func TestNormalizeVpcepServicePortBlocks(t *testing.T) {
 	}
 }
 
-func TestBuildLbmDnsRecordValues(t *testing.T) {
+func Test_buildLbmDnsRecordValues(t *testing.T) {
 	testCases := []struct {
 		name     string
 		values   []lbmDnsRecordValueBlock
@@ -1486,7 +1486,7 @@ func TestBuildLbmDnsRecordValues(t *testing.T) {
 	}
 }
 
-func TestNormalizeLbmDnsRecordValueBlocks(t *testing.T) {
+func Test_normalizeLbmDnsRecordValueBlocks(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []lbmDnsRecordValueBlock
@@ -1545,7 +1545,7 @@ func TestNormalizeLbmDnsRecordValueBlocks(t *testing.T) {
 	}
 }
 
-func TestNormalizeVpcepServicePermissionBlocks(t *testing.T) {
+func Test_normalizeVpcepServicePermissionBlocks(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePermissionBlock
@@ -1604,9 +1604,10 @@ func TestNormalizeVpcepServicePermissionBlocks(t *testing.T) {
 
 func Test_setM1ToM3UpdateState(t *testing.T) {
 	testCases := []struct {
-		name     string
-		plan     netConnectM1ToM3Model
-		expected netConnectM1ToM3Model
+		name                string
+		plan                netConnectM1ToM3Model
+		expectedPorts       []vpcepServicePortBlock
+		expectedPermissions []vpcepServicePermissionBlock
 	}{
 		{
 			name: "GIVEN update plan WHEN setM1ToM3UpdateState SHOULD normalize list fields and set state",
@@ -1622,7 +1623,37 @@ func Test_setM1ToM3UpdateState(t *testing.T) {
 				}
 				return plan
 			}(),
-			expected: newM1ToM3Model(),
+			expectedPorts: []vpcepServicePortBlock{
+				{ClientPort: 80, ServerPort: 8080},
+				{ClientPort: 443, ServerPort: 8443},
+			},
+			expectedPermissions: []vpcepServicePermissionBlock{
+				{Permission: testIamDomainId},
+				{Permission: testAnotherIamDomainId},
+			},
+		},
+		{
+			name: "GIVEN sorted update plan WHEN setM1ToM3UpdateState SHOULD keep normalized list fields",
+			plan: func() netConnectM1ToM3Model {
+				plan := newM1ToM3Model()
+				plan.M3VpcepServicePorts = []vpcepServicePortBlock{
+					{ClientPort: 80, ServerPort: 8080},
+					{ClientPort: 443, ServerPort: 8443},
+				}
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{
+					{Permission: testIamDomainId},
+					{Permission: testAnotherIamDomainId},
+				}
+				return plan
+			}(),
+			expectedPorts: []vpcepServicePortBlock{
+				{ClientPort: 80, ServerPort: 8080},
+				{ClientPort: 443, ServerPort: 8443},
+			},
+			expectedPermissions: []vpcepServicePermissionBlock{
+				{Permission: testIamDomainId},
+				{Permission: testAnotherIamDomainId},
+			},
 		},
 	}
 
@@ -1635,28 +1666,31 @@ func Test_setM1ToM3UpdateState(t *testing.T) {
 
 			assert.True(t, actual)
 			assert.Empty(t, resp.Diagnostics)
+			assert.Equal(t, tc.expectedPorts, plan.M3VpcepServicePorts)
+			assert.Equal(t, tc.expectedPermissions, plan.M3VpcepServicePermissions)
 			var actualState netConnectM1ToM3Model
 			diags := resp.State.Get(context.Background(), &actualState)
 			assert.Empty(t, diags)
-			assertM1ToM3State(t, tc.expected, actualState)
+			assert.Equal(t, tc.expectedPorts, actualState.M3VpcepServicePorts)
+			assert.Equal(t, tc.expectedPermissions, actualState.M3VpcepServicePermissions)
+			assertM1ToM3State(t, plan, actualState)
 		})
 	}
 }
 
 func Test_netConnectM1ToM3Resource_reconcileM1ToM3Service(t *testing.T) {
 	testCases := []struct {
-		name               string
-		state              netConnectM1ToM3Model
-		plan               netConnectM1ToM3Model
-		vpcepService       *mockVpcepServiceService
-		expectedErr        string
-		expectedUpdateReq  *service.VpcepServiceInput
-		expectedReconcile  []service.PermissionInput
-		expectedUpdateCall int
-		expectedPermCall   int
+		name                   string
+		state                  netConnectM1ToM3Model
+		plan                   netConnectM1ToM3Model
+		vpcepService           *mockVpcepServiceService
+		expectedErr            string
+		expectedUpdateReq      *service.VpcepServiceInput
+		expectedReconcile      []service.PermissionInput
+		expectedUpdateCall     int
+		expectedPermissionCall int
 	}{
 		{
-			name:         "GIVEN unchanged service state WHEN reconcileM1ToM3Service SHOULD keep service unchanged",
 			state:        newM1ToM3Model(),
 			plan:         newM1ToM3Model(),
 			vpcepService: &mockVpcepServiceService{},
@@ -1685,9 +1719,29 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Service(t *testing.T) {
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
 				return plan
 			}(),
-			vpcepService:      &mockVpcepServiceService{},
-			expectedReconcile: []service.PermissionInput{{Permission: "domain-id-3"}},
-			expectedPermCall:  1,
+			vpcepService:           &mockVpcepServiceService{},
+			expectedReconcile:      []service.PermissionInput{{Permission: "domain-id-3"}},
+			expectedPermissionCall: 1,
+		},
+		{
+			name:  "GIVEN service config and permissions change WHEN reconcileM1ToM3Service SHOULD update config and reconcile permissions",
+			state: newM1ToM3Model(),
+			plan: func() netConnectM1ToM3Model {
+				plan := newM1ToM3Model()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
+				plan.VpcepServiceId = types.StringUnknown()
+				return plan
+			}(),
+			vpcepService: &mockVpcepServiceService{},
+			expectedUpdateReq: func() *service.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+			expectedReconcile:      []service.PermissionInput{{Permission: "domain-id-3"}},
+			expectedUpdateCall:     1,
+			expectedPermissionCall: 1,
 		},
 		{
 			name: "GIVEN service id missing WHEN reconcileM1ToM3Service SHOULD return replacement required error",
@@ -1719,8 +1773,8 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Service(t *testing.T) {
 				plan.M3PortId = "port-2"
 				return plan
 			}(),
-			vpcepService:       &mockVpcepServiceService{updateErr: errors.New("update service failed")},
-			expectedErr:        "update service failed",
+			vpcepService:       &mockVpcepServiceService{updateErr: errors.New("UpdateConfig failed")},
+			expectedErr:        "UpdateConfig failed",
 			expectedUpdateCall: 1,
 		},
 	}
@@ -1730,38 +1784,61 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Service(t *testing.T) {
 			plan := tc.plan
 			r := newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, tc.vpcepService, &mockLbmDnsService{})
 
-			actual, err := r.reconcileM1ToM3Service(context.Background(), tc.state, &plan)
+			err := r.reconcileM1ToM3Service(context.Background(), tc.state, &plan)
 
-			assert.False(t, actual)
 			if tc.expectedErr == "" {
 				assert.NoError(t, err)
 			} else {
 				assert.ErrorContains(t, err, tc.expectedErr)
 			}
 			assert.Len(t, tc.vpcepService.updateServiceIds, tc.expectedUpdateCall)
-			assert.Len(t, tc.vpcepService.reconcilePermissionIds, tc.expectedPermCall)
+			assert.Len(t, tc.vpcepService.reconcilePermissionIds, tc.expectedPermissionCall)
 			if tc.expectedUpdateReq != nil {
 				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcepService.updateServiceIds)
-				assert.Equal(t, []service.VpcepServiceInput{*tc.expectedUpdateReq}, tc.vpcepService.updateInputs)
+				assert.Equal(t, []service.VpcepServiceInput{*tc.expectedUpdateReq}, tc.vpcepService.updateServiceInputs)
 			}
 			if tc.expectedReconcile != nil {
 				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcepService.reconcilePermissionIds)
-				assert.Equal(t, [][]service.PermissionInput{tc.expectedReconcile}, tc.vpcepService.reconcilePermissions)
+				assert.Equal(t, [][]service.PermissionInput{tc.expectedReconcile}, tc.vpcepService.reconcilePermissionInputs)
+			}
+			if tc.expectedUpdateCall > 0 || tc.expectedPermissionCall > 0 {
+				assert.Equal(t, tc.state.VpcepServiceId, plan.VpcepServiceId)
 			}
 		})
 	}
 }
 
+func Test_netConnectM1ToM3Resource_reconcileM1ToM3Service_idempotent(t *testing.T) {
+	state := newM1ToM3Model()
+	plan := newM1ToM3Model()
+	plan.M3PortId = "port-2"
+	plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
+	firstService := &mockVpcepServiceService{}
+	r := newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, firstService, &mockLbmDnsService{})
+
+	err := r.reconcileM1ToM3Service(context.Background(), state, &plan)
+	require.NoError(t, err)
+
+	secondService := &mockVpcepServiceService{}
+	r = newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, secondService, &mockLbmDnsService{})
+	secondPlan := plan
+	err = r.reconcileM1ToM3Service(context.Background(), plan, &secondPlan)
+
+	assert.NoError(t, err)
+	assert.Empty(t, secondService.updateServiceIds)
+	assert.Empty(t, secondService.reconcilePermissionIds)
+}
+
 func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 	testCases := []struct {
-		name               string
-		plan               netConnectM1ToM3Model
-		vpcepService       *mockVpcepServiceService
-		expectedErr        string
-		expectedUpdateReq  *service.VpcepServiceInput
-		expectedReconcile  []service.PermissionInput
-		expectedUpdateCall int
-		expectedPermCall   int
+		name                   string
+		plan                   netConnectM1ToM3Model
+		vpcepService           *mockVpcepServiceService
+		expectedErr            string
+		expectedUpdateReq      *service.VpcepServiceInput
+		expectedReconcile      []service.PermissionInput
+		expectedUpdateCall     int
+		expectedPermissionCall int
 	}{
 		{
 			name: "GIVEN service config and permissions changed WHEN updateExistingM1ToM3Service SHOULD update both",
@@ -1777,9 +1854,9 @@ func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 				expected.PortId = "port-2"
 				return expected
 			}(),
-			expectedReconcile:  []service.PermissionInput{{Permission: "domain-id-3"}},
-			expectedUpdateCall: 1,
-			expectedPermCall:   1,
+			expectedReconcile:      []service.PermissionInput{{Permission: "domain-id-3"}},
+			expectedUpdateCall:     1,
+			expectedPermissionCall: 1,
 		},
 		{
 			name: "GIVEN only service permissions changed WHEN updateExistingM1ToM3Service SHOULD reconcile permissions only",
@@ -1788,9 +1865,9 @@ func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
 				return plan
 			}(),
-			vpcepService:      &mockVpcepServiceService{},
-			expectedReconcile: []service.PermissionInput{{Permission: "domain-id-3"}},
-			expectedPermCall:  1,
+			vpcepService:           &mockVpcepServiceService{},
+			expectedReconcile:      []service.PermissionInput{{Permission: "domain-id-3"}},
+			expectedPermissionCall: 1,
 		},
 		{
 			name: "GIVEN service config update fails WHEN updateExistingM1ToM3Service SHOULD return update error",
@@ -1800,8 +1877,8 @@ func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
 				return plan
 			}(),
-			vpcepService:       &mockVpcepServiceService{updateErr: errors.New("update service failed")},
-			expectedErr:        "update service failed",
+			vpcepService:       &mockVpcepServiceService{updateErr: errors.New("UpdateConfig failed")},
+			expectedErr:        "UpdateConfig failed",
 			expectedUpdateCall: 1,
 		},
 		{
@@ -1811,9 +1888,27 @@ func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
 				return plan
 			}(),
-			vpcepService:     &mockVpcepServiceService{reconcileErr: errors.New("reconcile permissions failed")},
-			expectedErr:      "reconcile permissions failed",
-			expectedPermCall: 1,
+			vpcepService:           &mockVpcepServiceService{reconcileErr: errors.New("ReconcilePermissions failed")},
+			expectedErr:            "ReconcilePermissions failed",
+			expectedPermissionCall: 1,
+		},
+		{
+			name: "GIVEN config update succeeds and permission reconcile fails WHEN updateExistingM1ToM3Service SHOULD keep update call",
+			plan: func() netConnectM1ToM3Model {
+				plan := newM1ToM3Model()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-3"}}
+				return plan
+			}(),
+			vpcepService: &mockVpcepServiceService{reconcileErr: errors.New("ReconcilePermissions failed")},
+			expectedUpdateReq: func() *service.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+			expectedErr:            "ReconcilePermissions failed",
+			expectedUpdateCall:     1,
+			expectedPermissionCall: 1,
 		},
 	}
 
@@ -1829,14 +1924,14 @@ func Test_netConnectM1ToM3Resource_updateExistingM1ToM3Service(t *testing.T) {
 				assert.ErrorContains(t, err, tc.expectedErr)
 			}
 			assert.Len(t, tc.vpcepService.updateServiceIds, tc.expectedUpdateCall)
-			assert.Len(t, tc.vpcepService.reconcilePermissionIds, tc.expectedPermCall)
+			assert.Len(t, tc.vpcepService.reconcilePermissionIds, tc.expectedPermissionCall)
 			if tc.expectedUpdateReq != nil {
 				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcepService.updateServiceIds)
-				assert.Equal(t, []service.VpcepServiceInput{*tc.expectedUpdateReq}, tc.vpcepService.updateInputs)
+				assert.Equal(t, []service.VpcepServiceInput{*tc.expectedUpdateReq}, tc.vpcepService.updateServiceInputs)
 			}
 			if tc.expectedReconcile != nil {
 				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcepService.reconcilePermissionIds)
-				assert.Equal(t, [][]service.PermissionInput{tc.expectedReconcile}, tc.vpcepService.reconcilePermissions)
+				assert.Equal(t, [][]service.PermissionInput{tc.expectedReconcile}, tc.vpcepService.reconcilePermissionInputs)
 			}
 		})
 	}
@@ -1847,7 +1942,6 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Endpoint(t *testing.T) {
 		name                       string
 		state                      netConnectM1ToM3Model
 		plan                       netConnectM1ToM3Model
-		serviceReplaced            bool
 		endpointService            *mockVpcepEndpointService
 		expectedErr                string
 		expectedCreateInput        *service.VpcEndpointInput
@@ -1908,22 +2002,6 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Endpoint(t *testing.T) {
 			expectedEndpointServiceId:  testVpcepServiceId,
 		},
 		{
-			name:            "GIVEN service replaced WHEN reconcileM1ToM3Endpoint SHOULD create endpoint and mark old endpoint stale",
-			state:           newM1ToM3Model(),
-			plan:            newM1ToM3Model(),
-			serviceReplaced: true,
-			endpointService: &mockVpcepEndpointService{
-				createEndpointId: "endpoint-2",
-				createEndpointIp: "10.0.0.9",
-			},
-			expectedCreateInput:        newExpectedM1ToM3EndpointInput(),
-			expectedEndpointCreateCall: 1,
-			expectedStaleEndpointId:    testVpcepEndpointId,
-			expectedEndpointId:         "endpoint-2",
-			expectedEndpointIp:         "10.0.0.9",
-			expectedEndpointServiceId:  testVpcepServiceId,
-		},
-		{
 			name: "GIVEN endpoint create fails WHEN reconcileM1ToM3Endpoint SHOULD return create error",
 			state: func() netConnectM1ToM3Model {
 				state := newM1ToM3Model()
@@ -1949,7 +2027,7 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Endpoint(t *testing.T) {
 			stale := &m1ToM3StaleResources{}
 			r := newM1ToM3ResourceWithMocks(tc.endpointService, &mockVpcepServiceService{}, &mockLbmDnsService{})
 
-			err := r.reconcileM1ToM3Endpoint(context.Background(), tc.state, &plan, tc.serviceReplaced, stale)
+			err := r.reconcileM1ToM3Endpoint(context.Background(), tc.state, &plan, stale)
 
 			if tc.expectedErr == "" {
 				assert.NoError(t, err)
@@ -1968,7 +2046,7 @@ func Test_netConnectM1ToM3Resource_reconcileM1ToM3Endpoint(t *testing.T) {
 	}
 }
 
-func TestPreserveKnownComputedFields(t *testing.T) {
+func Test_preserveKnownComputedFields(t *testing.T) {
 	stateValues := mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
 		{RecordType: "A", RecordValue: testVpcepEndpointIp},
 	})
@@ -2227,7 +2305,7 @@ func Test_m1ToM3AllChildIdentitiesMissing(t *testing.T) {
 	}
 }
 
-func TestServiceRequiresReplacement(t *testing.T) {
+func Test_serviceRequiresReplacement(t *testing.T) {
 	testCases := []struct {
 		name     string
 		plan     netConnectM1ToM3Model
@@ -2276,7 +2354,7 @@ func TestServiceRequiresReplacement(t *testing.T) {
 	}
 }
 
-func TestServiceRequiresInPlaceUpdate(t *testing.T) {
+func Test_serviceRequiresInPlaceUpdate(t *testing.T) {
 	testCases := []struct {
 		name     string
 		plan     netConnectM1ToM3Model
@@ -2316,7 +2394,7 @@ func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 	}
 }
 
-func TestServicePortConfigChanged(t *testing.T) {
+func Test_servicePortConfigChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
 		plan     netConnectM1ToM3Model
@@ -2366,7 +2444,7 @@ func TestServicePortConfigChanged(t *testing.T) {
 	}
 }
 
-func TestServicePermissionsChanged(t *testing.T) {
+func Test_servicePermissionsChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
 		plan     netConnectM1ToM3Model
@@ -2407,13 +2485,12 @@ func TestServicePermissionsChanged(t *testing.T) {
 	}
 }
 
-func TestShouldReplaceEndpoint(t *testing.T) {
+func Test_shouldReplaceEndpoint(t *testing.T) {
 	testCases := []struct {
-		name            string
-		state           netConnectM1ToM3Model
-		plan            netConnectM1ToM3Model
-		serviceReplaced bool
-		expected        bool
+		name     string
+		state    netConnectM1ToM3Model
+		plan     netConnectM1ToM3Model
+		expected bool
 	}{
 		{
 			name:     "GIVEN endpoint matches plan WHEN shouldReplaceEndpoint SHOULD return false",
@@ -2430,13 +2507,6 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 			}(),
 			plan:     newM1ToM3Model(),
 			expected: false,
-		},
-		{
-			name:            "GIVEN service replaced WHEN shouldReplaceEndpoint SHOULD return true",
-			state:           newM1ToM3Model(),
-			plan:            newM1ToM3Model(),
-			serviceReplaced: true,
-			expected:        true,
 		},
 		{
 			name:  "GIVEN endpoint vpc changed WHEN shouldReplaceEndpoint SHOULD return true",
@@ -2502,14 +2572,14 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := shouldReplaceEndpoint(tc.state, tc.plan, tc.serviceReplaced)
+			actual := shouldReplaceEndpoint(tc.state, tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
 	}
 }
 
-func TestDnsIdentityChanged(t *testing.T) {
+func Test_dnsIdentityChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
 		plan     netConnectM1ToM3Model
@@ -2558,7 +2628,7 @@ func TestDnsIdentityChanged(t *testing.T) {
 	}
 }
 
-func TestLbmDnsRecordValueNeedsUpdate(t *testing.T) {
+func Test_lbmDnsRecordValueNeedsUpdate(t *testing.T) {
 	ctx := context.Background()
 	testCases := []struct {
 		name                       string
@@ -2623,7 +2693,7 @@ func TestLbmDnsRecordValueNeedsUpdate(t *testing.T) {
 	}
 }
 
-func TestLbmDnsRecordAValue(t *testing.T) {
+func Test_lbmDnsRecordAValue(t *testing.T) {
 	ctx := context.Background()
 	testCases := []struct {
 		name                       string
@@ -2680,7 +2750,7 @@ func TestLbmDnsRecordAValue(t *testing.T) {
 	}
 }
 
-func TestConvertPorts(t *testing.T) {
+func Test_convertPorts(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePortBlock
@@ -2713,7 +2783,7 @@ func TestConvertPorts(t *testing.T) {
 	}
 }
 
-func TestConvertPermissions(t *testing.T) {
+func Test_convertPermissions(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePermissionBlock
@@ -2743,7 +2813,7 @@ func TestConvertPermissions(t *testing.T) {
 	}
 }
 
-func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
+func Test_buildLbmDnsRecordValues_errorBranches(t *testing.T) {
 	// types.ObjectValue/ListValue 是薄封装，可能被编译器内联；
 	// 这里 patch 底层构造函数覆盖防御性 diagnostics 分支，避免为测试修改生产代码。
 	testCases := []struct {
@@ -2905,134 +2975,6 @@ func assertM1ToM3State(t *testing.T, expected, actual netConnectM1ToM3Model) {
 	diags := expected.LbmDnsRecordValues.ElementsAs(context.Background(), &expectedRecordValues, false)
 	require.False(t, diags.HasError(), "expected record values to decode without diagnostics, got %v", diags)
 	assertRecordValueList(t, expectedRecordValues, actual.LbmDnsRecordValues)
-}
-
-type mockVpcepEndpointService struct {
-	createEndpointId string
-	createEndpointIp string
-	createErr        error
-	deleteErr        error
-	getId            string
-	getCalls         int
-	getOutput        *service.VpcepEndpointOutput
-	getErr           error
-	createInputs     []service.VpcEndpointInput
-	deleteIds        []string
-}
-
-func (f *mockVpcepEndpointService) Create(_ context.Context, input service.VpcEndpointInput) (string, string, error) {
-	f.createInputs = append(f.createInputs, input)
-	return f.createEndpointId, f.createEndpointIp, f.createErr
-}
-
-func (f *mockVpcepEndpointService) Delete(_ context.Context, endpointId string) error {
-	f.deleteIds = append(f.deleteIds, endpointId)
-	return f.deleteErr
-}
-
-func (f *mockVpcepEndpointService) Get(_ context.Context, endpointId string) (*service.VpcepEndpointOutput, error) {
-	f.getId = endpointId
-	f.getCalls++
-	return f.getOutput, f.getErr
-}
-
-type mockVpcepServiceService struct {
-	createServiceId        string
-	createErr              error
-	addErr                 error
-	deleteErr              error
-	updateErr              error
-	reconcileErr           error
-	getId                  string
-	getCalls               int
-	getOutput              *service.VpcepServiceOutput
-	getErr                 error
-	getPermissionsId       string
-	getPermissionsCalls    int
-	getPermissionsOutput   map[string]string
-	getPermissionsErr      error
-	createInputs           []service.VpcepServiceInput
-	deleteIds              []string
-	addServiceIds          []string
-	addPermissions         [][]service.PermissionInput
-	updateServiceIds       []string
-	updateInputs           []service.VpcepServiceInput
-	reconcilePermissionIds []string
-	reconcilePermissions   [][]service.PermissionInput
-}
-
-func (f *mockVpcepServiceService) Create(_ context.Context, input service.VpcepServiceInput) (string, error) {
-	f.createInputs = append(f.createInputs, input)
-	return f.createServiceId, f.createErr
-}
-
-func (f *mockVpcepServiceService) Delete(_ context.Context, serviceId string) error {
-	f.deleteIds = append(f.deleteIds, serviceId)
-	return f.deleteErr
-}
-
-func (f *mockVpcepServiceService) Get(_ context.Context, serviceId string) (*service.VpcepServiceOutput, error) {
-	f.getId = serviceId
-	f.getCalls++
-	return f.getOutput, f.getErr
-}
-
-func (f *mockVpcepServiceService) AddPermissions(_ context.Context, serviceId string,
-	permissions []service.PermissionInput) error {
-	f.addServiceIds = append(f.addServiceIds, serviceId)
-	f.addPermissions = append(f.addPermissions, permissions)
-	return f.addErr
-}
-
-func (f *mockVpcepServiceService) GetPermissions(_ context.Context, serviceId string) (map[string]string, error) {
-	f.getPermissionsId = serviceId
-	f.getPermissionsCalls++
-	return f.getPermissionsOutput, f.getPermissionsErr
-}
-
-func (f *mockVpcepServiceService) UpdateConfig(_ context.Context, serviceId string,
-	input service.VpcepServiceInput) error {
-	f.updateServiceIds = append(f.updateServiceIds, serviceId)
-	f.updateInputs = append(f.updateInputs, input)
-	return f.updateErr
-}
-
-func (f *mockVpcepServiceService) ReconcilePermissions(_ context.Context, serviceId string,
-	permissions []service.PermissionInput) error {
-	f.reconcilePermissionIds = append(f.reconcilePermissionIds, serviceId)
-	f.reconcilePermissions = append(f.reconcilePermissions, permissions)
-	return f.reconcileErr
-}
-
-type mockLbmDnsService struct {
-	createOutput    *service.CreateLbmDnsOutput
-	createErr       error
-	getDetailId     string
-	getDetailCalls  int
-	getDetailOutput *service.LbmDnsDetailOutput
-	getDetailErr    error
-	createInputs    []service.CreateLbmDnsInput
-}
-
-func (f *mockLbmDnsService) CreateIntranetDnsDomain(_ context.Context,
-	input service.CreateLbmDnsInput) (*service.CreateLbmDnsOutput, error) {
-	f.createInputs = append(f.createInputs, input)
-	return f.createOutput, f.createErr
-}
-
-func (f *mockLbmDnsService) DeleteIntranetDnsDomain(_ context.Context, _ string) error {
-	return nil
-}
-
-func (f *mockLbmDnsService) UpdateRecordValue(_ context.Context, _ string, _ string) error {
-	return nil
-}
-
-func (f *mockLbmDnsService) GetLbmDnsDetail(_ context.Context,
-	recordId string) (*service.LbmDnsDetailOutput, error) {
-	f.getDetailId = recordId
-	f.getDetailCalls++
-	return f.getDetailOutput, f.getDetailErr
 }
 
 func newM1ToM3ResourceWithMocks(endpoint m1ToM3VpcepEndpointService, vpcep m1ToM3VpcepService,

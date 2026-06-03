@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -649,8 +650,7 @@ func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 
 	var stale m1ToM3StaleResources
 
-	serviceReplaced, err := r.reconcileM1ToM3Service(ctx, state, &plan)
-	if err != nil {
+	if err := r.reconcileM1ToM3Service(ctx, state, &plan); err != nil {
 		resp.Diagnostics.AddError("reconcile vpcep-service failed", err.Error())
 		return
 	}
@@ -658,7 +658,7 @@ func (r *netConnectM1ToM3Resource) Update(ctx context.Context, req resource.Upda
 		return
 	}
 
-	if err := r.reconcileM1ToM3Endpoint(ctx, state, &plan, serviceReplaced, &stale); err != nil {
+	if err := r.reconcileM1ToM3Endpoint(ctx, state, &plan, &stale); err != nil {
 		resp.Diagnostics.AddError("reconcile vpcep-endpoint failed", err.Error())
 		return
 	}
@@ -682,20 +682,20 @@ func setM1ToM3UpdateState(ctx context.Context, resp *resource.UpdateResponse, pl
 }
 
 func (r *netConnectM1ToM3Resource) reconcileM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
-	plan *netConnectM1ToM3Model) (bool, error) {
+	plan *netConnectM1ToM3Model) error {
 	if state.VpcepServiceId.IsNull() {
-		return false, fmt.Errorf("vpcep-service is missing; Terraform replacement is required")
+		return errors.New("vpcep-service is missing; Terraform replacement is required")
 	}
 	if serviceRequiresReplacement(state, *plan) {
-		return false, fmt.Errorf("vpcep-service replacement should be handled by Terraform resource replacement")
+		return errors.New("vpcep-service replacement should be handled by Terraform resource replacement")
 	}
 	if serviceRequiresInPlaceUpdate(state, *plan) {
 		if err := r.updateExistingM1ToM3Service(ctx, state, plan); err != nil {
-			return false, err
+			return err
 		}
 		plan.VpcepServiceId = state.VpcepServiceId
 	}
-	return false, nil
+	return nil
 }
 
 func (r *netConnectM1ToM3Resource) updateExistingM1ToM3Service(ctx context.Context, state netConnectM1ToM3Model,
@@ -718,8 +718,8 @@ func (r *netConnectM1ToM3Resource) updateExistingM1ToM3Service(ctx context.Conte
 }
 
 func (r *netConnectM1ToM3Resource) reconcileM1ToM3Endpoint(ctx context.Context, state netConnectM1ToM3Model,
-	plan *netConnectM1ToM3Model, serviceReplaced bool, stale *m1ToM3StaleResources) error {
-	endpointReplace := shouldReplaceEndpoint(state, *plan, serviceReplaced)
+	plan *netConnectM1ToM3Model, stale *m1ToM3StaleResources) error {
+	endpointReplace := shouldReplaceEndpoint(state, *plan)
 	if !state.VpcepEndpointId.IsNull() && !endpointReplace {
 		return nil
 	}
@@ -841,12 +841,9 @@ func servicePermissionsChanged(state, plan netConnectM1ToM3Model) bool {
 		normalizeVpcepServicePermissionBlocks(plan.M3VpcepServicePermissions))
 }
 
-func shouldReplaceEndpoint(state, plan netConnectM1ToM3Model, serviceReplaced bool) bool {
+func shouldReplaceEndpoint(state, plan netConnectM1ToM3Model) bool {
 	if state.VpcepEndpointId.IsNull() {
 		return false
-	}
-	if serviceReplaced {
-		return true
 	}
 	if state.M1PlusVpcId != plan.M1PlusVpcId || state.M1PlusSubnetId != plan.M1PlusSubnetId {
 		return true
