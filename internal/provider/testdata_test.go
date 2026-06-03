@@ -29,6 +29,10 @@ const (
 	testIamDomainId        = "domain-id-1"
 	testAnotherIamDomainId = "domain-id-2"
 	testPermissionId       = "permission-1"
+	testM3SubnetId         = "m3-subnet-1"
+	testDomainName         = "test.example.com"
+	testDomainAccount      = "account-1"
+	testServiceName        = "KKEM"
 )
 
 func testVpcepServicePorts() []vpcepServicePortBlock {
