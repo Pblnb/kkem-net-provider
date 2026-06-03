@@ -796,6 +796,390 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 	}
 }
 
+func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		output                   *service.VpcepServiceOutput
+		err                      error
+		permissions              map[string]string
+		permissionsErr           error
+		state                    netConnectM1ToM3Model
+		expectedErrMsg           string
+		expectedState            *netConnectM1ToM3Model
+		expectedServiceGetId     string
+		expectedPermissionsGetId string
+		expectedServiceGetCalls  int
+		expectedPermissionsCalls int
+	}{
+		{
+			name: "GIVEN null service id WHEN refreshVpcepServiceState SHOULD skip query",
+			state: func() netConnectM1ToM3Model {
+				state := newM1ToM3Model()
+				state.VpcepServiceId = types.StringNull()
+				return state
+			}(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepServiceId = types.StringNull()
+				return &expected
+			}(),
+		},
+		{
+			name: "GIVEN service exists WHEN refreshVpcepServiceState SHOULD sync service fields",
+			output: &service.VpcepServiceOutput{
+				ServiceId:  testVpcepServiceId,
+				VpcId:      testM3VpcId,
+				PortId:     testM3PortId,
+				ServerType: testM3ServerType,
+				Ports:      []service.PortPair{{ClientPort: 443, ServerPort: 8443}},
+			},
+			permissions: map[string]string{testIamDomainId: testPermissionId},
+			state:       newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.M3VpcId = testM3VpcId
+				expected.M3PortId = testM3PortId
+				expected.M3ServerType = testM3ServerType
+				expected.M3VpcepServicePorts = []vpcepServicePortBlock{{ClientPort: 443, ServerPort: 8443}}
+				expected.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: testIamDomainId}}
+				return &expected
+			}(),
+			expectedServiceGetId:     testVpcepServiceId,
+			expectedPermissionsGetId: testVpcepServiceId,
+			expectedServiceGetCalls:  1,
+			expectedPermissionsCalls: 1,
+		},
+		{
+			name:  "GIVEN service is missing WHEN refreshVpcepServiceState SHOULD clear service state",
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepServiceId = types.StringNull()
+				clearM1ToM3ServiceInputState(&expected)
+				return &expected
+			}(),
+			expectedServiceGetId:    testVpcepServiceId,
+			expectedServiceGetCalls: 1,
+		},
+		{
+			name:                    "GIVEN service query fails WHEN refreshVpcepServiceState SHOULD return error",
+			err:                     errors.New("query service failed"),
+			state:                   newM1ToM3Model(),
+			expectedErrMsg:          "query service failed",
+			expectedServiceGetId:    testVpcepServiceId,
+			expectedServiceGetCalls: 1,
+		},
+		{
+			name:                     "GIVEN permission query fails WHEN refreshVpcepServiceState SHOULD return wrapped error",
+			output:                   &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+			permissionsErr:           errors.New("query permission failed"),
+			state:                    newM1ToM3Model(),
+			expectedErrMsg:           "query vpcep-service permission failed: query permission failed",
+			expectedServiceGetId:     testVpcepServiceId,
+			expectedPermissionsGetId: testVpcepServiceId,
+			expectedServiceGetCalls:  1,
+			expectedPermissionsCalls: 1,
+		},
+		{
+			name:        "GIVEN service exists with empty permissions WHEN refreshVpcepServiceState SHOULD sync service fields with empty permissions",
+			output:      &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+			permissions: map[string]string{},
+			state:       newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.M3VpcepServicePermissions = nil
+				return &expected
+			}(),
+			expectedServiceGetId:     testVpcepServiceId,
+			expectedPermissionsGetId: testVpcepServiceId,
+			expectedServiceGetCalls:  1,
+			expectedPermissionsCalls: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			vpcepService := &mockVpcepServiceService{
+				getOutput:            tc.output,
+				getErr:               tc.err,
+				getPermissionsOutput: tc.permissions,
+				getPermissionsErr:    tc.permissionsErr,
+			}
+			target := newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, vpcepService, &mockLbmDnsService{})
+			state := tc.state
+
+			err := target.refreshVpcepServiceState(context.Background(), &state)
+
+			assert.Equal(t, tc.expectedServiceGetCalls, vpcepService.getCalls)
+			assert.Equal(t, tc.expectedPermissionsCalls, vpcepService.getPermissionsCalls)
+			assert.Equal(t, tc.expectedServiceGetId, vpcepService.getId)
+			assert.Equal(t, tc.expectedPermissionsGetId, vpcepService.getPermissionsId)
+			if tc.expectedErrMsg != "" {
+				assert.EqualError(t, err, tc.expectedErrMsg)
+				return
+			}
+			assert.NoError(t, err)
+			if tc.expectedState != nil {
+				assertM1ToM3State(t, *tc.expectedState, state)
+			}
+		})
+	}
+}
+
+func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		output                   *service.VpcepEndpointOutput
+		err                      error
+		state                    netConnectM1ToM3Model
+		expectedErrMsg           string
+		expectedState            *netConnectM1ToM3Model
+		expectedEndpointGetId    string
+		expectedEndpointGetCalls int
+	}{
+		{
+			name: "GIVEN null endpoint id WHEN refreshVpcepEndpointState SHOULD skip query",
+			state: func() netConnectM1ToM3Model {
+				state := newM1ToM3Model()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepEndpointId = types.StringNull()
+				return &expected
+			}(),
+		},
+		{
+			name: "GIVEN endpoint exists WHEN refreshVpcepEndpointState SHOULD sync endpoint fields",
+			output: &service.VpcepEndpointOutput{
+				EndpointId: testVpcepEndpointId,
+				Ip:         testVpcepEndpointIp,
+				VpcId:      testM1PlusVpcId,
+				SubnetId:   testM1PlusSubnetId,
+				ServiceId:  testVpcepServiceId,
+			},
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepEndpointIp = types.StringValue(testVpcepEndpointIp)
+				expected.M1PlusVpcId = testM1PlusVpcId
+				expected.M1PlusSubnetId = testM1PlusSubnetId
+				expected.VpcepEndpointServiceId = types.StringValue(testVpcepServiceId)
+				return &expected
+			}(),
+			expectedEndpointGetId:    testVpcepEndpointId,
+			expectedEndpointGetCalls: 1,
+		},
+		{
+			name:  "GIVEN endpoint is missing WHEN refreshVpcepEndpointState SHOULD clear endpoint state",
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepEndpointId = types.StringNull()
+				expected.VpcepEndpointIp = types.StringNull()
+				expected.VpcepEndpointServiceId = types.StringNull()
+				clearM1ToM3EndpointInputState(&expected)
+				return &expected
+			}(),
+			expectedEndpointGetId:    testVpcepEndpointId,
+			expectedEndpointGetCalls: 1,
+		},
+		{
+			name:                     "GIVEN endpoint query fails WHEN refreshVpcepEndpointState SHOULD return error",
+			err:                      errors.New("query endpoint failed"),
+			state:                    newM1ToM3Model(),
+			expectedErrMsg:           "query endpoint failed",
+			expectedEndpointGetId:    testVpcepEndpointId,
+			expectedEndpointGetCalls: 1,
+		},
+		{
+			name: "GIVEN endpoint exists with empty ip WHEN refreshVpcepEndpointState SHOULD keep original ip value",
+			output: &service.VpcepEndpointOutput{
+				EndpointId: testVpcepEndpointId,
+				Ip:         "",
+				VpcId:      testM1PlusVpcId,
+				SubnetId:   testM1PlusSubnetId,
+				ServiceId:  "",
+			},
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.M1PlusVpcId = testM1PlusVpcId
+				expected.M1PlusSubnetId = testM1PlusSubnetId
+				return &expected
+			}(),
+			expectedEndpointGetId:    testVpcepEndpointId,
+			expectedEndpointGetCalls: 1,
+		},
+		{
+			name: "GIVEN endpoint exists with empty vpc and subnet WHEN refreshVpcepEndpointState SHOULD keep original network values",
+			output: &service.VpcepEndpointOutput{
+				EndpointId: testVpcepEndpointId,
+				Ip:         testVpcepEndpointIp,
+				VpcId:      "",
+				SubnetId:   "",
+				ServiceId:  testVpcepServiceId,
+			},
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.VpcepEndpointIp = types.StringValue(testVpcepEndpointIp)
+				expected.VpcepEndpointServiceId = types.StringValue(testVpcepServiceId)
+				return &expected
+			}(),
+			expectedEndpointGetId:    testVpcepEndpointId,
+			expectedEndpointGetCalls: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			endpointService := &mockVpcepEndpointService{
+				getOutput: tc.output,
+				getErr:    tc.err,
+			}
+			target := newM1ToM3ResourceWithMocks(endpointService, &mockVpcepServiceService{}, &mockLbmDnsService{})
+			state := tc.state
+
+			err := target.refreshVpcepEndpointState(context.Background(), &state)
+
+			assert.Equal(t, tc.expectedEndpointGetCalls, endpointService.getCalls)
+			assert.Equal(t, tc.expectedEndpointGetId, endpointService.getId)
+			if tc.expectedErrMsg != "" {
+				assert.EqualError(t, err, tc.expectedErrMsg)
+				return
+			}
+			assert.NoError(t, err)
+			if tc.expectedState != nil {
+				assertM1ToM3State(t, *tc.expectedState, state)
+			}
+		})
+	}
+}
+
+func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		output                 *service.LbmDnsDetailOutput
+		err                    error
+		state                  netConnectM1ToM3Model
+		expectedErrMsg         string
+		expectedErrDetail      string
+		expectedState          *netConnectM1ToM3Model
+		expectedLbmDnsGetId    string
+		expectedLbmDnsGetCalls int
+	}{
+		{
+			name: "GIVEN null dns record id WHEN refreshLbmDnsState SHOULD skip query",
+			state: func() netConnectM1ToM3Model {
+				state := newM1ToM3Model()
+				state.LbmDnsRecordId = types.StringNull()
+				return state
+			}(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.LbmDnsRecordId = types.StringNull()
+				return &expected
+			}(),
+		},
+		{
+			name: "GIVEN dns record exists WHEN refreshLbmDnsState SHOULD sync dns fields",
+			output: &service.LbmDnsDetailOutput{
+				RecordId:     testLbmDnsRecordId,
+				RegionCode:   testRegionCode,
+				ServiceName:  testLbmDnsServiceName,
+				HostRecord:   testDnsDomain,
+				DomainSuffix: testDnsDomainSuffix,
+				RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+			},
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.RegionCode = testRegionCode
+				expected.LbmDnsServiceName = testLbmDnsServiceName
+				expected.DnsDomain = testDnsDomain
+				expected.DnsDomainSuffix = testDnsDomainSuffix
+				expected.LbmDnsRecordValues = testLbmDnsRecordValues(
+					[]lbmDnsRecordValueBlock{{RecordType: "A", RecordValue: testVpcepEndpointIp}})
+				return &expected
+			}(),
+			expectedLbmDnsGetId:    testLbmDnsRecordId,
+			expectedLbmDnsGetCalls: 1,
+		},
+		{
+			name:  "GIVEN dns record is missing WHEN refreshLbmDnsState SHOULD clear dns state",
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.LbmDnsRecordId = types.StringNull()
+				expected.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+				clearM1ToM3DnsInputState(&expected)
+				return &expected
+			}(),
+			expectedLbmDnsGetId:    testLbmDnsRecordId,
+			expectedLbmDnsGetCalls: 1,
+		},
+		{
+			name:                   "GIVEN dns query fails WHEN refreshLbmDnsState SHOULD return diagnostics",
+			err:                    errors.New("query dns failed"),
+			state:                  newM1ToM3Model(),
+			expectedErrMsg:         "query lbm-dns record failed",
+			expectedErrDetail:      "query dns failed",
+			expectedLbmDnsGetId:    testLbmDnsRecordId,
+			expectedLbmDnsGetCalls: 1,
+		},
+		{
+			name: "GIVEN dns record exists with empty record values WHEN refreshLbmDnsState SHOULD sync dns fields with empty record values",
+			output: &service.LbmDnsDetailOutput{
+				RecordId:     testLbmDnsRecordId,
+				RegionCode:   testRegionCode,
+				ServiceName:  testLbmDnsServiceName,
+				HostRecord:   testDnsDomain,
+				DomainSuffix: testDnsDomainSuffix,
+			},
+			state: newM1ToM3Model(),
+			expectedState: func() *netConnectM1ToM3Model {
+				expected := newM1ToM3Model()
+				expected.RegionCode = testRegionCode
+				expected.LbmDnsServiceName = testLbmDnsServiceName
+				expected.DnsDomain = testDnsDomain
+				expected.DnsDomainSuffix = testDnsDomainSuffix
+				expected.LbmDnsRecordValues = testLbmDnsRecordValues([]lbmDnsRecordValueBlock{})
+				return &expected
+			}(),
+			expectedLbmDnsGetId:    testLbmDnsRecordId,
+			expectedLbmDnsGetCalls: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lbmDnsService := &mockLbmDnsService{
+				getDetailOutput: tc.output,
+				getDetailErr:    tc.err,
+			}
+			target := newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, &mockVpcepServiceService{},
+				lbmDnsService)
+			state := tc.state
+
+			diags := target.refreshLbmDnsState(context.Background(), &state)
+
+			assert.Equal(t, tc.expectedLbmDnsGetCalls, lbmDnsService.getDetailCalls)
+			assert.Equal(t, tc.expectedLbmDnsGetId, lbmDnsService.getDetailId)
+			if tc.expectedErrMsg != "" {
+				assertDiagnostics(t, tc.expectedErrMsg, tc.expectedErrDetail, diags)
+				return
+			}
+			assert.False(t, diags.HasError())
+			assert.Empty(t, diags)
+			if tc.expectedState != nil {
+				assertM1ToM3State(t, *tc.expectedState, state)
+			}
+		})
+	}
+}
+
 func Test_requiredM1ToM3StringAttribute(t *testing.T) {
 	testCases := []struct {
 		name                        string
