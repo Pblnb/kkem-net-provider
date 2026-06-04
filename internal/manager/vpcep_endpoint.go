@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -20,17 +20,17 @@ type VpcepEndpointClient interface {
 	ListEndpointInfoDetails(req *model.ListEndpointInfoDetailsRequest) (*model.ListEndpointInfoDetailsResponse, error)
 }
 
-// VpcepEndpointService - VPCEP Endpoint service 层
-type VpcepEndpointService struct {
+// VpcepEndpointManager - VPCEP Endpoint manager 层
+type VpcepEndpointManager struct {
 	client          VpcepEndpointClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 	retryBaseDelay  time.Duration
 }
 
-// NewVpcepEndpointService - 构造函数
-func NewVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointService {
-	return &VpcepEndpointService{
+// NewVpcepEndpointManager - 构造函数
+func NewVpcepEndpointManager(client VpcepEndpointClient) *VpcepEndpointManager {
+	return &VpcepEndpointManager{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -56,7 +56,7 @@ type VpcepEndpointOutput struct {
 }
 
 // Create - 创建 VPCEP Endpoint 并等待就绪，返回 endpoint ID 和 IP
-func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInput) (string, string, error) {
+func (s *VpcepEndpointManager) Create(ctx context.Context, input VpcEndpointInput) (string, string, error) {
 	createReq := &model.CreateEndpointRequest{
 		Body: &model.CreateEndpointRequestBody{
 			EndpointServiceId: input.EndpointServiceId,
@@ -113,7 +113,7 @@ func (s *VpcepEndpointService) Create(ctx context.Context, input VpcEndpointInpu
 }
 
 // waitForReady 轮询等待 VPCEP Endpoint 状态变为 accepted，返回 endpoint IP
-func (s *VpcepEndpointService) waitForReady(ctx context.Context, endpointId string) (string, error) {
+func (s *VpcepEndpointManager) waitForReady(ctx context.Context, endpointId string) (string, error) {
 	timeout := time.After(s.pollingTimeout)
 	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
@@ -162,7 +162,7 @@ func (s *VpcepEndpointService) waitForReady(ctx context.Context, endpointId stri
 }
 
 // Delete - 删除 VPCEP Endpoint
-func (s *VpcepEndpointService) Delete(ctx context.Context, endpointId string) error {
+func (s *VpcepEndpointManager) Delete(ctx context.Context, endpointId string) error {
 	deleteReq := &model.DeleteEndpointRequest{
 		VpcEndpointId: endpointId,
 	}
@@ -193,7 +193,7 @@ func (s *VpcepEndpointService) Delete(ctx context.Context, endpointId string) er
 }
 
 // Get - 查询 VPCEP Endpoint 详情，不存在时返回 nil, nil
-func (s *VpcepEndpointService) Get(ctx context.Context, endpointId string) (*VpcepEndpointOutput, error) {
+func (s *VpcepEndpointManager) Get(ctx context.Context, endpointId string) (*VpcepEndpointOutput, error) {
 	endpointNotFound := false
 	var getResp *model.ListEndpointInfoDetailsResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {

@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -35,7 +35,7 @@ var vpcepNotFoundError = &sdkerr.ServiceResponseError{
 	ErrorCode:  testVpcepNotFoundErrorCode,
 }
 
-// VPCEP Service 测试数据/函数
+// VPCEP-Service 测试数据/函数
 const (
 	testVpcepServiceId     = "service-1"
 	testVpcepServicePortId = "port-1"

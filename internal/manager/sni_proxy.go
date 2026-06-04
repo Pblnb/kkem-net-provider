@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -20,16 +20,16 @@ const (
 	sniAccessObject = "APIGW"
 )
 
-// SniProxyService - SNI Proxy service 层
-type SniProxyService struct {
+// SniProxyManager - SNI Proxy manager 层
+type SniProxyManager struct {
 	client          sniproxyclient.SniProxyClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 }
 
-// NewSniProxyService - 构造函数
-func NewSniProxyService(client sniproxyclient.SniProxyClient) *SniProxyService {
-	return &SniProxyService{
+// NewSniProxyManager - 构造函数
+func NewSniProxyManager(client sniproxyclient.SniProxyClient) *SniProxyManager {
+	return &SniProxyManager{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -54,7 +54,7 @@ type AccessSniProxyOutput struct {
 }
 
 // AccessSniProxy - 接入 SNI Proxy 服务并等待就绪
-func (s *SniProxyService) AccessSniProxy(ctx context.Context, input AccessSniProxyInput) (string, error) {
+func (s *SniProxyManager) AccessSniProxy(ctx context.Context, input AccessSniProxyInput) (string, error) {
 	if s.client == nil {
 		return "", errors.New("sni proxy client is not initialized")
 	}
@@ -108,14 +108,14 @@ func (s *SniProxyService) AccessSniProxy(ctx context.Context, input AccessSniPro
 }
 
 // waitForSniProxyAccessReady - 轮询等待 SNI Proxy 接入就绪
-func (s *SniProxyService) waitForSniProxyAccessReady(ctx context.Context, resourceId string) (*AccessSniProxyOutput, error) {
+func (s *SniProxyManager) waitForSniProxyAccessReady(ctx context.Context, resourceId string) (*AccessSniProxyOutput, error) {
 	// 立即执行一次检查
 	result, err := s.checkAccessReady(ctx, resourceId)
 	if err == nil {
 		return result, nil
 	}
 
-	// Use service fields to support dependency injection for faster testing
+	// Use manager fields to support dependency injection for faster testing
 	timer := time.NewTimer(s.pollingTimeout)
 	defer timer.Stop()
 	ticker := time.NewTicker(s.pollingInterval)
@@ -148,7 +148,7 @@ func (s *SniProxyService) waitForSniProxyAccessReady(ctx context.Context, resour
 	}
 }
 
-func (s *SniProxyService) checkAccessReady(ctx context.Context, resourceId string) (*AccessSniProxyOutput, error) {
+func (s *SniProxyManager) checkAccessReady(ctx context.Context, resourceId string) (*AccessSniProxyOutput, error) {
 	resp, err := s.client.GetAccessService(ctx, resourceId)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (s *SniProxyService) checkAccessReady(ctx context.Context, resourceId strin
 }
 
 // DeleteSniProxy - 删除 SNI Proxy 接入
-func (s *SniProxyService) DeleteSniProxy(ctx context.Context, resourceId string) error {
+func (s *SniProxyManager) DeleteSniProxy(ctx context.Context, resourceId string) error {
 	if resourceId == "" {
 		tflog.Info(ctx, "SNI Proxy access deleted", map[string]any{
 			"resource_id": resourceId,
@@ -230,7 +230,7 @@ func (s *SniProxyService) DeleteSniProxy(ctx context.Context, resourceId string)
 }
 
 // GetSniProxy - 查询 SNI Proxy 接入详情，不存在时返回 nil, nil
-func (s *SniProxyService) GetSniProxy(ctx context.Context, resourceId string) (*AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
+func (s *SniProxyManager) GetSniProxy(ctx context.Context, resourceId string) (*AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
 	if s.client == nil {
 		return nil, nil, errors.New("sni proxy client is not initialized")
 	}

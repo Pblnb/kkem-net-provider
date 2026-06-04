@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 )
 
-// VpcepServiceClient - VPCEP Service 专用接口，仅暴露 Service 相关的 SDK 方法。
+// VpcepServiceClient - VPCEP-Service 专用接口，仅暴露 VPCEP-Service 相关的 SDK 方法。
 type VpcepServiceClient interface {
 	CreateEndpointService(req *model.CreateEndpointServiceRequest) (*model.CreateEndpointServiceResponse, error)
 	DeleteEndpointService(req *model.DeleteEndpointServiceRequest) (*model.DeleteEndpointServiceResponse, error)
@@ -34,17 +34,17 @@ const (
 	vpcepServiceStatusFailed    = "failed"
 )
 
-// VpcepServiceService - VPCEP Service 资源的 service 层封装。名称中的两个 Service 分别表示 VPCEP Service 资源和 Service 代码分层。
-type VpcepServiceService struct {
+// VpcepServiceManager - VPCEP-Service 资源的 manager 层封装。
+type VpcepServiceManager struct {
 	client          VpcepServiceClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 	retryBaseDelay  time.Duration
 }
 
-// NewVpcepServiceService - 构造 VPCEP Service 资源的 service 层实例。
-func NewVpcepServiceService(client VpcepServiceClient) *VpcepServiceService {
-	return &VpcepServiceService{
+// NewVpcepServiceManager - 构造 VPCEP-Service 资源的 manager 层实例。
+func NewVpcepServiceManager(client VpcepServiceClient) *VpcepServiceManager {
+	return &VpcepServiceManager{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -52,13 +52,13 @@ func NewVpcepServiceService(client VpcepServiceClient) *VpcepServiceService {
 	}
 }
 
-// PortPair - VPCEP Service 端口对
+// PortPair - VPCEP-Service 端口对
 type PortPair struct {
 	ClientPort int32
 	ServerPort int32
 }
 
-// VpcepServiceInput - 创建/更新 VPCEP Service 的输入参数
+// VpcepServiceInput - 创建/更新 VPCEP-Service 的输入参数
 type VpcepServiceInput struct {
 	VpcId      string
 	PortId     string
@@ -81,8 +81,8 @@ type PermissionInput struct {
 	Permission string
 }
 
-// Create - 创建 VPCEP Service 并等待就绪
-func (s *VpcepServiceService) Create(ctx context.Context, input VpcepServiceInput) (string, error) {
+// Create - 创建 VPCEP-Service 并等待就绪
+func (s *VpcepServiceManager) Create(ctx context.Context, input VpcepServiceInput) (string, error) {
 	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	ports := make([]model.PortList, len(input.Ports))
 	for i := range input.Ports {
@@ -148,8 +148,8 @@ func (s *VpcepServiceService) Create(ctx context.Context, input VpcepServiceInpu
 	return *createResp.Id, nil
 }
 
-// waitForReady 轮询等待 VPCEP Service 状态变为 available
-func (s *VpcepServiceService) waitForReady(ctx context.Context, serviceId string) error {
+// waitForReady 轮询等待 VPCEP-Service 状态变为 available
+func (s *VpcepServiceManager) waitForReady(ctx context.Context, serviceId string) error {
 	timeout := time.After(s.pollingTimeout)
 	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
@@ -209,8 +209,8 @@ func (s *VpcepServiceService) waitForReady(ctx context.Context, serviceId string
 	}
 }
 
-// Delete - 删除 VPCEP Service
-func (s *VpcepServiceService) Delete(ctx context.Context, serviceId string) error {
+// Delete - 删除 VPCEP-Service
+func (s *VpcepServiceManager) Delete(ctx context.Context, serviceId string) error {
 	deleteReq := &model.DeleteEndpointServiceRequest{
 		VpcEndpointServiceId: serviceId,
 	}
@@ -242,7 +242,7 @@ func (s *VpcepServiceService) Delete(ctx context.Context, serviceId string) erro
 }
 
 // AddPermissions - 添加白名单权限
-func (s *VpcepServiceService) AddPermissions(ctx context.Context, serviceId string,
+func (s *VpcepServiceManager) AddPermissions(ctx context.Context, serviceId string,
 	permissions []PermissionInput) error {
 	addPermissions := make([]model.EpsAddPermissionRequest, len(permissions))
 	for i := range permissions {
@@ -285,7 +285,7 @@ func (s *VpcepServiceService) AddPermissions(ctx context.Context, serviceId stri
 }
 
 // ReconcilePermissions - 对比并同步权限列表
-func (s *VpcepServiceService) ReconcilePermissions(ctx context.Context, serviceId string,
+func (s *VpcepServiceManager) ReconcilePermissions(ctx context.Context, serviceId string,
 	desired []PermissionInput) error {
 	remote, err := s.GetPermissions(ctx, serviceId)
 	if err != nil {
@@ -351,7 +351,7 @@ func (s *VpcepServiceService) ReconcilePermissions(ctx context.Context, serviceI
 }
 
 // GetPermissions - 查询当前权限列表，返回 map[permission]id
-func (s *VpcepServiceService) GetPermissions(ctx context.Context, serviceId string) (map[string]string, error) {
+func (s *VpcepServiceManager) GetPermissions(ctx context.Context, serviceId string) (map[string]string, error) {
 	var getResp *model.ListServicePermissionsDetailsResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error
@@ -381,8 +381,8 @@ func (s *VpcepServiceService) GetPermissions(ctx context.Context, serviceId stri
 	return permissions, nil
 }
 
-// UpdateConfig - 更新 VPCEP Service 配置，仅支持更新 port_id 与 ports
-func (s *VpcepServiceService) UpdateConfig(ctx context.Context, serviceId string, input VpcepServiceInput) error {
+// UpdateConfig - 更新 VPCEP-Service 配置，仅支持更新 port_id 与 ports
+func (s *VpcepServiceManager) UpdateConfig(ctx context.Context, serviceId string, input VpcepServiceInput) error {
 	tcpProtocol := model.GetPortListProtocolEnum().TCP
 	ports := make([]model.PortList, len(input.Ports))
 	for i := range input.Ports {
@@ -426,8 +426,8 @@ func (s *VpcepServiceService) UpdateConfig(ctx context.Context, serviceId string
 	return nil
 }
 
-// Get - 查询 VPCEP Service 详情，不存在时返回 nil, nil
-func (s *VpcepServiceService) Get(ctx context.Context, serviceId string) (*VpcepServiceOutput, error) {
+// Get - 查询 VPCEP-Service 详情，不存在时返回 nil, nil
+func (s *VpcepServiceManager) Get(ctx context.Context, serviceId string) (*VpcepServiceOutput, error) {
 	serviceNotFound := false
 	var getResp *model.ListServiceDetailsResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {

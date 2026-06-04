@@ -7,9 +7,14 @@ Terraform Provider，提供 M1/M3 网络自动打通能力。
 - `kkem_net_connect_m1_to_m3`: M1→M3 方向网络打通
     - 在 M3 侧创建 VPCEP-Service
     - 在 M1+ 侧创建 VPCEP-Endpoint
-    - 输出 Client IP 供 DNS 配置使用
+    - 调用 LBM-DNS 创建解析记录，将域名指向 VPCEP-Endpoint IP
+    - 支持 Read 状态同步、Update 子资源修复和 Delete 逆序清理
 
-- `kkem_net_connect_m3_to_m1`: M3→M1 方向网络打通（开发中）
+- `kkem_net_connect_m3_to_m1`: M3→M1 方向网络打通
+    - 调用 SNI Proxy 接入指定服务
+    - 在 M3 侧创建 VPCEP-Endpoint，对接 M1 侧已有 SNI Proxy EP-Server
+    - 调用华为云标准 DNS 创建 Private Zone 和 A 记录
+    - 支持 Create 失败回滚、Read 状态同步、Update 子资源修复和 Delete 逆序清理
 
 ## 前置要求
 
@@ -19,26 +24,27 @@ Terraform Provider，提供 M1/M3 网络自动打通能力。
 
 ## 项目结构
 
-本项目采用 **三层架构（Resource → Service → Client）** 组织代码，各层职责分离如下：
+本项目采用 **三层架构（Resource → Manager → Client）** 组织代码，各层职责分离如下：
 
 ```
 internal/
 ├── provider/                         # Resource 层：Terraform 资源生命周期管理
 │   ├── provider.go                   # Provider 核心逻辑（Schema、Configure、Client 初始化）
 │   ├── resource_net_connect_m1_to_m3.go  # M1→M3 网络打通资源（VPCEP-Service + VPCEP-Client + LBM-DNS）
-│   └── resource_net_connect_m3_to_m1.go  # M3→M1 网络打通资源（VPCEP-Client + 标准 DNS）
-├── service/                          # Service 层：业务逻辑封装
+│   ├── resource_net_connect_m3_to_m1.go  # M3→M1 网络打通资源（SNI Proxy + VPCEP-Client + 标准 DNS）
+│   └── manager_interface.go          # Resource 层依赖的 Manager 接口
+├── manager/                          # Manager 层：业务逻辑封装
 │   ├── const.go                      # 共享常量（轮询间隔/超时/错误容忍）
-│   ├── vpcep_service.go              # VPCEP Service 业务封装（创建/删除/权限/状态同步）
+│   ├── vpcep_service.go              # VPCEP-Service 业务封装（创建/删除/权限/状态同步）
 │   ├── vpcep_endpoint.go             # VPCEP Endpoint 业务封装（原子化创建+等待/删除/查询）
 │   ├── dns.go                        # 标准 DNS 业务封装（PrivateZone/RecordSet）
 │   ├── lbm_dns.go                    # LBM DNS 业务封装（创建/删除/更新/查询）
-│   └── utils.go                      # Service 层工具函数（重试/404判断/指针包装）
+│   ├── sni_proxy.go                  # SNI Proxy 业务封装（接入/删除/查询）
+│   └── utils.go                      # Manager 层工具函数（重试/404判断/指针包装）
 └── client/                           # Client 层：外部 API 客户端封装
-    └── lbmdnsclient/                 # LBM-DNS 客户端
-        ├── dns_client.go             # LBM-DNS API 调用封装（异步任务发起/轮询）
-        ├── http_client.go            # HTTP 基础封装（请求构造/响应解析）
-        └── types.go                  # LBM-DNS 请求/响应结构体定义
+    ├── common/                       # 通用 HTTP Client
+    ├── lbmdnsclient/                 # LBM-DNS 客户端
+    └── sniproxyclient/               # SNI Proxy 客户端
 ```
 
 ### 分层职责
@@ -46,14 +52,17 @@ internal/
 | 层级           | 目录                       | 职责                                                                                                        |
 |--------------|--------------------------|-----------------------------------------------------------------------------------------------------------|
 | **Resource** | `internal/provider/`     | 对接 Terraform Plugin Framework，处理 Schema 定义、State 读写、Diagnostics 上报，**不直接调用 SDK**                          |
-| **Service**  | `internal/service/`      | 封装云资源业务逻辑（创建顺序、轮询等待、错误处理、404 语义化），通过**细粒度接口**隔离具体 SDK                                                     |
+| **Manager**  | `internal/manager/`      | 封装云资源业务逻辑（创建顺序、轮询等待、错误处理、404 语义化），通过**细粒度接口**隔离具体 SDK                                                     |
 | **Client**   | `internal/client/`       | 封装底层 API 调用细节。当前包含 `lbmdnsclient/`（LBM DNS 客户端），后续可扩展 `sniproxyclient/` 等 |
+
+> `Service` 只作为领域名或外部 API 术语保留，例如 `VPCEP-Service`、`service_name`、`CreateEndpointService`。项目中间业务封装层统一命名为 Manager。
 
 ### 关键设计
 
-- **接口隔离**：`VpcepServiceClient` / `VpcepEndpointClient` / `DnsServiceClient` 等接口仅暴露该 Service 所需的 SDK 方法，便于测试时 Mock
-- **原子化操作**：`VpcepEndpointService.Create` 将"创建 + 轮询等待 Ready"合并为单次调用，Resource 层无需关心轮询细节
+- **接口隔离**：`VpcepServiceClient` / `VpcepEndpointClient` / `DnsManagerClient` 等接口仅暴露该 Manager 所需的 SDK 方法，便于测试时 Mock
+- **原子化操作**：`VpcepEndpointManager.Create` 将"创建 + 轮询等待 Ready"合并为单次调用，Resource 层无需关心轮询细节
 - **共享常量**：`const.go` 统一管理所有轮询参数（interval / timeout / errTolerance），避免各文件重复声明
+- **资源来源标识**：Provider 创建的 VPCEP-Service、VPCEP-Endpoint、DNS Private Zone 和 DNS Record Set 会写入 `creator=kkem` tag 与 `Created by kkem-net-provider` description
 
 ## 开发指南
 
@@ -88,22 +97,22 @@ Terraform 的状态管理非常严格，一个字段通常有三种状态：**�
 
 ### 测试函数命名规范：
 - 公开函数：Test<FuncName>
-  示例：TestNewLbmDnsService
+  示例：TestNewLbmDnsManager
 
 - 私有函数：Test_<funcName>
   示例：Test_isLbmDnsNoChanges
 
 - 公开类型的公开方法：Test<Type>_<Method>
-  示例：TestLbmDnsService_CreateIntranetDnsDomain
+  示例：TestLbmDnsManager_CreateIntranetDnsDomain
 
 - 公开类型的私有方法：Test<Type>_<method>
-  示例：TestLbmDnsService_waitForTaskCompleted
+  示例：TestLbmDnsManager_waitForTaskCompleted
 
 - 私有类型的公开方法：Test_<type>_<Method>
-  示例：Test_lbmDnsService_CreateIntranetDnsDomain
+  示例：Test_lbmDnsManager_CreateIntranetDnsDomain
 
 - 私有类型的私有方法：Test_<type>_<method>
-  示例：Test_lbmDnsService_waitForTaskCompleted
+  示例：Test_lbmDnsManager_waitForTaskCompleted
 
 - 对于需要对一个被测函数使用多个测试函数覆盖特定分支，额外添加 _<BranchPurpose> 后缀，例如
-  示例：Test_lbmDnsService_waitForTaskCompleted_errorCases
+  示例：Test_lbmDnsManager_waitForTaskCompleted_errorCases
