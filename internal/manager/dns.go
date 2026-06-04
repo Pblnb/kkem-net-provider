@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -27,17 +27,17 @@ type DnsServiceClient interface {
 	ShowRecordSetWithLine(req *model.ShowRecordSetWithLineRequest) (*model.ShowRecordSetWithLineResponse, error)
 }
 
-// DnsService - DNS service 层
-type DnsService struct {
+// DnsManager - DNS service 层
+type DnsManager struct {
 	client          DnsServiceClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 	retryBaseDelay  time.Duration
 }
 
-// NewDnsService - 构造函数
-func NewDnsService(client DnsServiceClient) *DnsService {
-	return &DnsService{
+// NewDnsManager - 构造函数
+func NewDnsManager(client DnsServiceClient) *DnsManager {
+	return &DnsManager{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -65,7 +65,7 @@ type DnsZoneOutput struct {
 }
 
 // CreatePrivateZone - 创建 Private Zone 并等待就绪
-func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) (string, error) {
+func (s *DnsManager) CreatePrivateZone(ctx context.Context, input DnsZoneInput) (string, error) {
 	createReq := &model.CreatePrivateZoneRequest{
 		Body: &model.CreatePrivateZoneReq{
 			Name:        input.DomainName,
@@ -118,7 +118,7 @@ func (s *DnsService) CreatePrivateZone(ctx context.Context, input DnsZoneInput) 
 }
 
 // waitForZoneReady 轮询等待 Private Zone 状态变为 ACTIVE
-func (s *DnsService) waitForZoneReady(ctx context.Context, zoneId string) error {
+func (s *DnsManager) waitForZoneReady(ctx context.Context, zoneId string) error {
 	timeout := time.After(s.pollingTimeout)
 	ticker := time.NewTicker(s.pollingInterval)
 	defer ticker.Stop()
@@ -177,7 +177,7 @@ func (s *DnsService) waitForZoneReady(ctx context.Context, zoneId string) error 
 }
 
 // CreateRecordSet - 创建 Record Set
-func (s *DnsService) CreateRecordSet(ctx context.Context, input DnsRecordSetInput) (string, error) {
+func (s *DnsManager) CreateRecordSet(ctx context.Context, input DnsRecordSetInput) (string, error) {
 	createReq := &model.CreateRecordSetWithLineRequest{
 		ZoneId: input.ZoneId,
 		Body: &model.CreateRecordSetWithLineRequestBody{
@@ -225,7 +225,7 @@ func (s *DnsService) CreateRecordSet(ctx context.Context, input DnsRecordSetInpu
 }
 
 // DeletePrivateZone - 删除 Private Zone
-func (s *DnsService) DeletePrivateZone(ctx context.Context, zoneId string) error {
+func (s *DnsManager) DeletePrivateZone(ctx context.Context, zoneId string) error {
 	deleteReq := &model.DeletePrivateZoneRequest{
 		ZoneId: zoneId,
 	}
@@ -257,7 +257,7 @@ func (s *DnsService) DeletePrivateZone(ctx context.Context, zoneId string) error
 }
 
 // GetPrivateZone - 查询 Private Zone，不存在时返回 nil, nil
-func (s *DnsService) GetPrivateZone(ctx context.Context, zoneId string) (*DnsZoneOutput, error) {
+func (s *DnsManager) GetPrivateZone(ctx context.Context, zoneId string) (*DnsZoneOutput, error) {
 	var getResp *model.ShowPrivateZoneResponse
 	err := retryWithBackoff(ctx, maxRetryCount, s.retryBaseDelay, func() error {
 		var innerErr error

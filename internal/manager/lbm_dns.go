@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -16,16 +16,16 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/client/lbmdnsclient"
 )
 
-// LbmDnsService - LBM-DNS service 层
-type LbmDnsService struct {
+// LbmDnsManager - LBM-DNS service 层
+type LbmDnsManager struct {
 	client          lbmdnsclient.LbmDnsClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 }
 
-// NewLbmDnsService - 构造函数
-func NewLbmDnsService(client lbmdnsclient.LbmDnsClient) *LbmDnsService {
-	return &LbmDnsService{
+// NewLbmDnsManager - 构造函数
+func NewLbmDnsManager(client lbmdnsclient.LbmDnsClient) *LbmDnsManager {
+	return &LbmDnsManager{
 		client:          client,
 		pollingInterval: pollingInterval,
 		pollingTimeout:  pollingTimeout,
@@ -54,7 +54,7 @@ type CreateLbmDnsOutput struct {
 }
 
 // CreateIntranetDnsDomain - 创建 IntranetDnsDomain 记录并等待完成
-func (s *LbmDnsService) CreateIntranetDnsDomain(ctx context.Context, input CreateLbmDnsInput) (*CreateLbmDnsOutput,
+func (s *LbmDnsManager) CreateIntranetDnsDomain(ctx context.Context, input CreateLbmDnsInput) (*CreateLbmDnsOutput,
 	error) {
 	if s.client == nil {
 		return nil, fmt.Errorf("m3 lbm-dns client is not initialized")
@@ -108,7 +108,7 @@ func (s *LbmDnsService) CreateIntranetDnsDomain(ctx context.Context, input Creat
 }
 
 // waitForLbmDnsRecordReady 轮询等待 lbm-dns 记录创建完成，返回 DNS 记录 ID
-func (s *LbmDnsService) waitForLbmDnsRecordReady(ctx context.Context, taskId string) (string, error) {
+func (s *LbmDnsManager) waitForLbmDnsRecordReady(ctx context.Context, taskId string) (string, error) {
 	resp, err := s.waitForTaskCompleted(ctx, taskId, "DNS record creation")
 	if err != nil {
 		return "", err
@@ -120,7 +120,7 @@ func (s *LbmDnsService) waitForLbmDnsRecordReady(ctx context.Context, taskId str
 }
 
 // waitForTaskCompleted 轮询等待 lbm-dns 异步任务完成
-func (s *LbmDnsService) waitForTaskCompleted(ctx context.Context,
+func (s *LbmDnsManager) waitForTaskCompleted(ctx context.Context,
 	taskId, taskName string) (*lbmdnsclient.GetIntranetDnsDomainTaskStatusResponse, error) {
 	timeout := time.After(s.pollingTimeout)
 	ticker := time.NewTicker(s.pollingInterval)
@@ -174,7 +174,7 @@ func (s *LbmDnsService) waitForTaskCompleted(ctx context.Context,
 }
 
 // DeleteIntranetDnsDomain - 删除 IntranetDnsDomain 记录
-func (s *LbmDnsService) DeleteIntranetDnsDomain(ctx context.Context, recordId string) error {
+func (s *LbmDnsManager) DeleteIntranetDnsDomain(ctx context.Context, recordId string) error {
 	if s.client == nil {
 		return fmt.Errorf("m3 lbm-dns client is not initialized")
 	}
@@ -233,7 +233,7 @@ func (s *LbmDnsService) DeleteIntranetDnsDomain(ctx context.Context, recordId st
 }
 
 // UpdateRecordValue - 更新 DNS 记录的 IP
-func (s *LbmDnsService) UpdateRecordValue(ctx context.Context, recordId, endpointIp string) error {
+func (s *LbmDnsManager) UpdateRecordValue(ctx context.Context, recordId, endpointIp string) error {
 	if s.client == nil {
 		return fmt.Errorf("m3 lbm-dns client is not initialized")
 	}
@@ -288,7 +288,7 @@ func isLbmDnsNoChanges(status, code int, msg string) bool {
 
 // getLbmDnsRawResponse 执行 DNS 查询的 API 调用和公共校验，返回原始响应数据。
 // 记录不存在时返回 nil, nil。
-func (s *LbmDnsService) getLbmDnsRawResponse(ctx context.Context,
+func (s *LbmDnsManager) getLbmDnsRawResponse(ctx context.Context,
 	recordId string) (*lbmdnsclient.IntranetDnsDomainResource, error) {
 	if s.client == nil {
 		return nil, fmt.Errorf("m3 lbm-dns client is not initialized")
@@ -337,7 +337,7 @@ func extractLbmDnsRecordValues(data *lbmdnsclient.IntranetDnsDomainResource) []L
 }
 
 // GetRecord - 查询 DNS 记录详情，不存在时返回 nil, nil
-func (s *LbmDnsService) GetRecord(ctx context.Context, recordId string) (*CreateLbmDnsOutput, error) {
+func (s *LbmDnsManager) GetRecord(ctx context.Context, recordId string) (*CreateLbmDnsOutput, error) {
 	tflog.Debug(ctx, "Querying lbm-dns record", map[string]any{
 		"dns_record_id": recordId,
 	})
@@ -360,7 +360,7 @@ func (s *LbmDnsService) GetRecord(ctx context.Context, recordId string) (*Create
 }
 
 // GetLbmDnsDetail - 查询 DNS 记录的详细信息（含 RegionCode、ServiceName 等输入属性），用于 Read 回填
-func (s *LbmDnsService) GetLbmDnsDetail(ctx context.Context, recordId string) (*LbmDnsDetailOutput, error) {
+func (s *LbmDnsManager) GetLbmDnsDetail(ctx context.Context, recordId string) (*LbmDnsDetailOutput, error) {
 	data, err := s.getLbmDnsRawResponse(ctx, recordId)
 	if err != nil {
 		return nil, err

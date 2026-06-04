@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package service
+package manager
 
 import (
 	"context"
@@ -23,20 +23,20 @@ func TestNewSniProxyService(t *testing.T) {
 		client sniproxyclient.SniProxyClient
 	}{
 		{
-			name:   "GIVEN nil client WHEN NewSniProxyService SHOULD create service with nil client",
+			name:   "GIVEN nil client WHEN NewSniProxyManager SHOULD create service with nil client",
 			client: nil,
 		},
 		{
-			name:   "GIVEN mock client WHEN NewSniProxyService SHOULD create service with client",
+			name:   "GIVEN mock client WHEN NewSniProxyManager SHOULD create service with client",
 			client: &mockSniProxyClient{},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := NewSniProxyService(tc.client)
+			actual := NewSniProxyManager(tc.client)
 
-			expected := &SniProxyService{
+			expected := &SniProxyManager{
 				client:          tc.client,
 				pollingInterval: pollingInterval,
 				pollingTimeout:  pollingTimeout,
@@ -140,22 +140,22 @@ func TestSniProxyService_AccessSniProxy(t *testing.T) {
 				}
 			}
 
-			var service *SniProxyService
+			var manager *SniProxyManager
 			if tc.clientNil {
-				service = NewSniProxyService(nil)
+				manager = NewSniProxyManager(nil)
 			} else if tc.pollingTimeout > 0 && tc.pollingInterval > 0 {
-				service = newMockSniProxyService(mockClient, tc.pollingTimeout, tc.pollingInterval)
+				manager = newMockSniProxyService(mockClient, tc.pollingTimeout, tc.pollingInterval)
 			} else if tc.getResult != nil {
-				service = newMockSniProxyService(mockClient, 300*time.Millisecond, 20*time.Millisecond)
+				manager = newMockSniProxyService(mockClient, 300*time.Millisecond, 20*time.Millisecond)
 			} else {
-				service = NewSniProxyService(mockClient)
+				manager = NewSniProxyManager(mockClient)
 			}
 
 			if !tc.clientNil {
 				patchRetryWithBackoff(t)
 			}
 
-			actualRes, actualErr := service.AccessSniProxy(ctx, testInput)
+			actualRes, actualErr := manager.AccessSniProxy(ctx, testInput)
 
 			if tc.expectedErrMsg != "" {
 				assert.Error(t, actualErr)
@@ -235,18 +235,18 @@ func TestSniProxyService_DeleteSniProxy(t *testing.T) {
 				mockClient.addDeleteResult(tc.deleteResult)
 			}
 
-			var service *SniProxyService
+			var manager *SniProxyManager
 			if mockClient != nil {
-				service = NewSniProxyService(mockClient)
+				manager = NewSniProxyManager(mockClient)
 			} else {
-				service = NewSniProxyService(nil)
+				manager = NewSniProxyManager(nil)
 			}
 
 			if !tc.clientNil {
 				patchRetryWithBackoff(t)
 			}
 
-			actualErr := service.DeleteSniProxy(ctx, tc.resourceId)
+			actualErr := manager.DeleteSniProxy(ctx, tc.resourceId)
 
 			if tc.expectedErrMsg != "" {
 				assert.Error(t, actualErr)
@@ -316,9 +316,9 @@ func TestSniProxyService_checkAccessReady(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := newMockSniProxyClient()
 			mockClient.addGetResult(tc.getResult)
-			service := NewSniProxyService(mockClient)
+			manager := NewSniProxyManager(mockClient)
 
-			out, err := service.checkAccessReady(context.Background(), testSniProxyResourceId)
+			out, err := manager.checkAccessReady(context.Background(), testSniProxyResourceId)
 
 			if tc.expectedErrMsg != "" {
 				assert.Error(t, err)
@@ -393,7 +393,7 @@ func TestSniProxyService_waitForSniProxyAccessReady(t *testing.T) {
 				mockClient.addGetResult(r)
 			}
 
-			var service *SniProxyService
+			var manager *SniProxyManager
 			timeout := 300 * time.Millisecond
 			interval := 20 * time.Millisecond
 
@@ -401,7 +401,7 @@ func TestSniProxyService_waitForSniProxyAccessReady(t *testing.T) {
 				timeout = tc.pollingTimeout
 				interval = tc.pollingInterval
 			}
-			service = newMockSniProxyService(mockClient, timeout, interval)
+			manager = newMockSniProxyService(mockClient, timeout, interval)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -412,7 +412,7 @@ func TestSniProxyService_waitForSniProxyAccessReady(t *testing.T) {
 
 			go func() {
 				defer close(done)
-				out, err = service.waitForSniProxyAccessReady(ctx, testSniProxyResourceId)
+				out, err = manager.waitForSniProxyAccessReady(ctx, testSniProxyResourceId)
 			}()
 
 			if tc.cancelAfterMs > 0 {
@@ -512,18 +512,18 @@ func TestSniProxyService_GetSniProxy(t *testing.T) {
 				mockClient.addGetResult(tc.getResult)
 			}
 
-			var service *SniProxyService
+			var manager *SniProxyManager
 			if mockClient != nil {
-				service = NewSniProxyService(mockClient)
+				manager = NewSniProxyManager(mockClient)
 			} else {
-				service = NewSniProxyService(nil)
+				manager = NewSniProxyManager(nil)
 			}
 
 			if !tc.clientNil {
 				patchRetryWithBackoff(t)
 			}
 
-			out, resp, err := service.GetSniProxy(ctx, tc.resourceId)
+			out, resp, err := manager.GetSniProxy(ctx, tc.resourceId)
 
 			if tc.expectedErrMsg != "" {
 				assert.Error(t, err)
@@ -635,8 +635,8 @@ type deleteResult struct {
 	err  error
 }
 
-func newMockSniProxyService(client sniproxyclient.SniProxyClient, timeout time.Duration, interval time.Duration) *SniProxyService {
-	return &SniProxyService{
+func newMockSniProxyService(client sniproxyclient.SniProxyClient, timeout time.Duration, interval time.Duration) *SniProxyManager {
+	return &SniProxyManager{
 		client:          client,
 		pollingTimeout:  timeout,
 		pollingInterval: interval,

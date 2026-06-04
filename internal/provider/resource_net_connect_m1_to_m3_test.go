@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"huawei.com/kkem/kkem-net-provider/internal/service"
+	"huawei.com/kkem/kkem-net-provider/internal/manager"
 )
 
 func TestNewNetConnectM1ToM3Resource(t *testing.T) {
@@ -158,9 +158,9 @@ func Test_netConnectM1ToM3Resource_Configure(t *testing.T) {
 				assertDiagnostics(t, tc.expectedErr, "invalid provider data type", resp.Diagnostics)
 			}
 			if tc.expectedInit {
-				assert.NotNil(t, target.m1PlusVpcepService)
-				assert.NotNil(t, target.m3VpcepService)
-				assert.NotNil(t, target.lbmDnsService)
+				assert.NotNil(t, target.m1PlusVpcepEndpointManager)
+				assert.NotNil(t, target.m3VpcepServiceManager)
+				assert.NotNil(t, target.lbmDnsManager)
 			}
 		})
 	}
@@ -172,7 +172,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 		// Mock service
 		endpointService *mockVpcepEndpointService
 		vpcepService    *mockVpcepServiceService
-		lbmDnsService   *mockLbmDnsService
+		lbmDnsManager   *mockLbmDnsService
 		// 测试前置条件
 		unknownPlan           bool
 		patchRecordValueDiags bool
@@ -188,10 +188,10 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 		expectedEndpointDeleteIds []string
 		expectedServiceDeleteIds  []string
 		// 期望的子资源调用入参
-		expectedServiceInput      *service.VpcepServiceInput
-		expectedPermissionsInput  []service.PermissionInput
-		expectedEndpointInput     *service.VpcEndpointInput
-		expectedCreateLbmDnsInput *service.CreateLbmDnsInput
+		expectedServiceInput      *manager.VpcepServiceInput
+		expectedPermissionsInput  []manager.PermissionInput
+		expectedEndpointInput     *manager.VpcEndpointInput
+		expectedCreateLbmDnsInput *manager.CreateLbmDnsInput
 		// 期望的 Terraform State 字段
 		expectedLbmDnsRecordValues   []lbmDnsRecordValueBlock
 		expectedStateVpcepServiceId  string
@@ -207,7 +207,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createServiceId: testVpcepServiceId,
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				createOutput: newCreateLbmDnsOutput(),
 			},
 			expectedServiceCreateCalls:   1,
@@ -227,7 +227,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			name:            "GIVEN unknown plan value WHEN Create SHOULD return diagnostics",
 			endpointService: &mockVpcepEndpointService{},
 			vpcepService:    &mockVpcepServiceService{},
-			lbmDnsService:   &mockLbmDnsService{},
+			lbmDnsManager:   &mockLbmDnsService{},
 			unknownPlan:     true,
 			expectedErr:     "Value Conversion Error",
 		},
@@ -237,7 +237,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createErr: errors.New("create service failed"),
 			},
-			lbmDnsService:              &mockLbmDnsService{},
+			lbmDnsManager:              &mockLbmDnsService{},
 			expectedErr:                "create vpcep-service failed",
 			expectedServiceCreateCalls: 1,
 			expectedServiceInput:       newExpectedM1ToM3VpcepServiceInput(),
@@ -249,7 +249,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 				createServiceId: testVpcepServiceId,
 				addErr:          errors.New("add permission failed"),
 			},
-			lbmDnsService: &mockLbmDnsService{},
+			lbmDnsManager: &mockLbmDnsService{},
 			expectedErr: fmt.Sprintf("add vpcep-service permission failed (vpcep_service_id: %s)",
 				testVpcepServiceId),
 			expectedServiceCreateCalls: 1,
@@ -266,7 +266,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createServiceId: testVpcepServiceId,
 			},
-			lbmDnsService:               &mockLbmDnsService{},
+			lbmDnsManager:               &mockLbmDnsService{},
 			expectedErr:                 "create vpcep-endpoint failed",
 			expectedServiceCreateCalls:  1,
 			expectedPermissionsCalls:    1,
@@ -285,7 +285,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createServiceId: testVpcepServiceId,
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				createErr: errors.New("create dns failed"),
 			},
 			expectedErr:                 "create lbm-dns record failed",
@@ -309,7 +309,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createServiceId: testVpcepServiceId,
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				createOutput: newCreateLbmDnsOutput(),
 			},
 			patchRecordValueDiags:       true,
@@ -335,7 +335,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				createServiceId: testVpcepServiceId,
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				createErr: errors.New("create dns failed"),
 			},
 			expectedErr:                 "create lbm-dns record failed",
@@ -361,7 +361,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 				createServiceId: testVpcepServiceId,
 				deleteErr:       errors.New("delete service failed"),
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				createErr: errors.New("create dns failed"),
 			},
 			expectedErr:                 "create lbm-dns record failed",
@@ -382,7 +382,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			target := newM1ToM3ResourceWithMocks(tc.endpointService, tc.vpcepService, tc.lbmDnsService)
+			target := newM1ToM3ResourceWithMocks(tc.endpointService, tc.vpcepService, tc.lbmDnsManager)
 			req := resource.CreateRequest{Plan: newM1ToM3Plan(t, newM1ToM3CreateModel())}
 			if tc.unknownPlan {
 				req.Plan = newUnknownM1ToM3Plan(t)
@@ -402,7 +402,7 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 
 			if tc.expectedErr == "" {
 				assert.False(t, resp.Diagnostics.HasError())
-				var actual netConnectM1ToM3Model
+				var actual netConnectM1ToM3ResourceModel
 				diags := resp.State.Get(ctx, &actual)
 				assert.False(t, diags.HasError(), "expected state get without diagnostics, got %v", diags)
 				assert.Equal(t, tc.expectedStateVpcepServiceId, actual.VpcepServiceId.ValueString())
@@ -433,9 +433,9 @@ func Test_netConnectM1ToM3Resource_Create(t *testing.T) {
 			if tc.expectedEndpointInput != nil && assert.NotEmpty(t, tc.endpointService.createInputs) {
 				assert.Equal(t, *tc.expectedEndpointInput, tc.endpointService.createInputs[0])
 			}
-			assert.Len(t, tc.lbmDnsService.createInputs, tc.expectedDnsCreateCalls)
-			if tc.expectedCreateLbmDnsInput != nil && assert.NotEmpty(t, tc.lbmDnsService.createInputs) {
-				assert.Equal(t, *tc.expectedCreateLbmDnsInput, tc.lbmDnsService.createInputs[0])
+			assert.Len(t, tc.lbmDnsManager.createInputs, tc.expectedDnsCreateCalls)
+			if tc.expectedCreateLbmDnsInput != nil && assert.NotEmpty(t, tc.lbmDnsManager.createInputs) {
+				assert.Equal(t, *tc.expectedCreateLbmDnsInput, tc.lbmDnsManager.createInputs[0])
 			}
 			assert.Equal(t, tc.expectedEndpointDeleteIds, tc.endpointService.deleteIds)
 			assert.Equal(t, tc.expectedServiceDeleteIds, tc.vpcepService.deleteIds)
@@ -449,7 +449,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		// Mock service
 		endpointService *mockVpcepEndpointService
 		vpcepService    *mockVpcepServiceService
-		lbmDnsService   *mockLbmDnsService
+		lbmDnsManager   *mockLbmDnsService
 		// 测试前置条件
 		unknownState bool
 		// 期望的子资源 Get 调用次数
@@ -465,12 +465,12 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		// 期望的错误与状态
 		expectedErr     string
 		expectedRemoved bool
-		expectedState   *netConnectM1ToM3Model
+		expectedState   *netConnectM1ToM3ResourceModel
 	}{
 		{
 			name: "GIVEN all child resources exist WHEN Read SHOULD sync state from remote",
 			endpointService: &mockVpcepEndpointService{
-				getOutput: &service.VpcepEndpointOutput{
+				getOutput: &manager.VpcepEndpointOutput{
 					EndpointId: testVpcepEndpointId,
 					Ip:         testVpcepEndpointIp,
 					VpcId:      testM1PlusVpcId,
@@ -479,25 +479,25 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 				},
 			},
 			vpcepService: &mockVpcepServiceService{
-				getOutput: &service.VpcepServiceOutput{
+				getOutput: &manager.VpcepServiceOutput{
 					ServiceId:  testVpcepServiceId,
 					VpcId:      testM3VpcId,
 					PortId:     testM3PortId,
 					ServerType: testM3ServerType,
-					Ports:      []service.PortPair{{ClientPort: 443, ServerPort: 8443}},
+					Ports:      []manager.PortPair{{ClientPort: 443, ServerPort: 8443}},
 				},
 				getPermissionsOutput: map[string]string{
 					testIamDomainId: testPermissionId,
 				},
 			},
-			lbmDnsService: &mockLbmDnsService{
-				getDetailOutput: &service.LbmDnsDetailOutput{
+			lbmDnsManager: &mockLbmDnsService{
+				getDetailOutput: &manager.LbmDnsDetailOutput{
 					RecordId:     testLbmDnsRecordId,
 					RegionCode:   testRegionCode,
 					ServiceName:  testLbmDnsServiceName,
 					HostRecord:   testDnsDomain,
 					DomainSuffix: testDnsDomainSuffix,
-					RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+					RecordValues: []manager.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 				},
 			},
 			expectedServiceGetCalls:  1,
@@ -508,7 +508,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			expectedEndpointGetId:    testVpcepEndpointId,
 			expectedLbmDnsGetId:      testLbmDnsRecordId,
 			expectedPermissionsGetId: testVpcepServiceId,
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M3VpcId = testM3VpcId
 				expected.M3PortId = testM3PortId
@@ -533,7 +533,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			name:                     "GIVEN all child resources are missing WHEN Read SHOULD remove resource from state",
 			endpointService:          &mockVpcepEndpointService{},
 			vpcepService:             &mockVpcepServiceService{},
-			lbmDnsService:            &mockLbmDnsService{},
+			lbmDnsManager:            &mockLbmDnsService{},
 			expectedServiceGetCalls:  1,
 			expectedEndpointGetCalls: 1,
 			expectedDnsGetCalls:      1,
@@ -545,17 +545,17 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		{
 			name: "GIVEN service is missing but other child resources exist WHEN Read SHOULD keep partial state",
 			endpointService: &mockVpcepEndpointService{
-				getOutput: &service.VpcepEndpointOutput{
+				getOutput: &manager.VpcepEndpointOutput{
 					EndpointId: testVpcepEndpointId,
 					Ip:         testVpcepEndpointIp,
 					ServiceId:  testVpcepServiceId,
 				},
 			},
 			vpcepService: &mockVpcepServiceService{},
-			lbmDnsService: &mockLbmDnsService{
-				getDetailOutput: &service.LbmDnsDetailOutput{
+			lbmDnsManager: &mockLbmDnsService{
+				getDetailOutput: &manager.LbmDnsDetailOutput{
 					RecordId:     testLbmDnsRecordId,
-					RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+					RecordValues: []manager.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 				},
 			},
 			expectedServiceGetCalls:  1,
@@ -564,12 +564,12 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			expectedServiceGetId:     testVpcepServiceId,
 			expectedEndpointGetId:    testVpcepEndpointId,
 			expectedLbmDnsGetId:      testLbmDnsRecordId,
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M1PlusVpcId = testM1PlusVpcId
 				expected.M1PlusSubnetId = testM1PlusSubnetId
 				expected.VpcepServiceId = types.StringNull()
-				clearM1ToM3ServiceInputState(&expected)
+				clearM1ToM3VpcepServiceInputState(&expected)
 				expected.RegionCode = ""
 				expected.LbmDnsServiceName = ""
 				expected.DnsDomain = ""
@@ -581,23 +581,23 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			name:            "GIVEN endpoint is missing but other child resources exist WHEN Read SHOULD keep partial state",
 			endpointService: &mockVpcepEndpointService{},
 			vpcepService: &mockVpcepServiceService{
-				getOutput: &service.VpcepServiceOutput{
+				getOutput: &manager.VpcepServiceOutput{
 					ServiceId:  testVpcepServiceId,
 					VpcId:      testM3VpcId,
 					PortId:     testM3PortId,
 					ServerType: testM3ServerType,
-					Ports:      []service.PortPair{{ClientPort: 443, ServerPort: 8443}},
+					Ports:      []manager.PortPair{{ClientPort: 443, ServerPort: 8443}},
 				},
 				getPermissionsOutput: map[string]string{testIamDomainId: testPermissionId},
 			},
-			lbmDnsService: &mockLbmDnsService{
-				getDetailOutput: &service.LbmDnsDetailOutput{
+			lbmDnsManager: &mockLbmDnsService{
+				getDetailOutput: &manager.LbmDnsDetailOutput{
 					RecordId:     testLbmDnsRecordId,
 					RegionCode:   testRegionCode,
 					ServiceName:  testLbmDnsServiceName,
 					HostRecord:   testDnsDomain,
 					DomainSuffix: testDnsDomainSuffix,
-					RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+					RecordValues: []manager.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 				},
 			},
 			expectedServiceGetCalls:  1,
@@ -608,7 +608,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			expectedEndpointGetId:    testVpcepEndpointId,
 			expectedLbmDnsGetId:      testLbmDnsRecordId,
 			expectedPermissionsGetId: testVpcepServiceId,
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M3VpcId = testM3VpcId
 				expected.M3PortId = testM3PortId
@@ -631,7 +631,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		{
 			name: "GIVEN lbm dns record is missing but other child resources exist WHEN Read SHOULD keep partial state",
 			endpointService: &mockVpcepEndpointService{
-				getOutput: &service.VpcepEndpointOutput{
+				getOutput: &manager.VpcepEndpointOutput{
 					EndpointId: testVpcepEndpointId,
 					Ip:         testVpcepEndpointIp,
 					VpcId:      testM1PlusVpcId,
@@ -640,16 +640,16 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 				},
 			},
 			vpcepService: &mockVpcepServiceService{
-				getOutput: &service.VpcepServiceOutput{
+				getOutput: &manager.VpcepServiceOutput{
 					ServiceId:  testVpcepServiceId,
 					VpcId:      testM3VpcId,
 					PortId:     testM3PortId,
 					ServerType: testM3ServerType,
-					Ports:      []service.PortPair{{ClientPort: 443, ServerPort: 8443}},
+					Ports:      []manager.PortPair{{ClientPort: 443, ServerPort: 8443}},
 				},
 				getPermissionsOutput: map[string]string{testIamDomainId: testPermissionId},
 			},
-			lbmDnsService:            &mockLbmDnsService{},
+			lbmDnsManager:            &mockLbmDnsService{},
 			expectedServiceGetCalls:  1,
 			expectedEndpointGetCalls: 1,
 			expectedDnsGetCalls:      1,
@@ -658,7 +658,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			expectedEndpointGetId:    testVpcepEndpointId,
 			expectedLbmDnsGetId:      testLbmDnsRecordId,
 			expectedPermissionsGetId: testVpcepServiceId,
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M3VpcId = testM3VpcId
 				expected.M3PortId = testM3PortId
@@ -678,7 +678,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			name:            "GIVEN unknown state values WHEN Read SHOULD return diagnostics",
 			endpointService: &mockVpcepEndpointService{},
 			vpcepService:    &mockVpcepServiceService{},
-			lbmDnsService:   &mockLbmDnsService{},
+			lbmDnsManager:   &mockLbmDnsService{},
 			unknownState:    true,
 			expectedErr:     "Value Conversion Error",
 		},
@@ -688,7 +688,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 			vpcepService: &mockVpcepServiceService{
 				getErr: errors.New("query service failed"),
 			},
-			lbmDnsService:           &mockLbmDnsService{},
+			lbmDnsManager:           &mockLbmDnsService{},
 			expectedServiceGetCalls: 1,
 			expectedServiceGetId:    testVpcepServiceId,
 			expectedErr:             "query vpcep-service failed",
@@ -699,9 +699,9 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 				getErr: errors.New("query endpoint failed"),
 			},
 			vpcepService: &mockVpcepServiceService{
-				getOutput: &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+				getOutput: &manager.VpcepServiceOutput{ServiceId: testVpcepServiceId},
 			},
-			lbmDnsService:            &mockLbmDnsService{},
+			lbmDnsManager:            &mockLbmDnsService{},
 			expectedServiceGetCalls:  1,
 			expectedEndpointGetCalls: 1,
 			expectedPermissionsCalls: 1,
@@ -713,12 +713,12 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		{
 			name: "GIVEN dns query fails WHEN Read SHOULD return diagnostics",
 			endpointService: &mockVpcepEndpointService{
-				getOutput: &service.VpcepEndpointOutput{EndpointId: testVpcepEndpointId},
+				getOutput: &manager.VpcepEndpointOutput{EndpointId: testVpcepEndpointId},
 			},
 			vpcepService: &mockVpcepServiceService{
-				getOutput: &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+				getOutput: &manager.VpcepServiceOutput{ServiceId: testVpcepServiceId},
 			},
-			lbmDnsService: &mockLbmDnsService{
+			lbmDnsManager: &mockLbmDnsService{
 				getDetailErr: errors.New("query dns failed"),
 			},
 			expectedServiceGetCalls:  1,
@@ -734,13 +734,13 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 		{
 			name: "GIVEN permission query fails WHEN Read SHOULD return diagnostics",
 			endpointService: &mockVpcepEndpointService{
-				getOutput: &service.VpcepEndpointOutput{EndpointId: testVpcepEndpointId},
+				getOutput: &manager.VpcepEndpointOutput{EndpointId: testVpcepEndpointId},
 			},
 			vpcepService: &mockVpcepServiceService{
-				getOutput:         &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+				getOutput:         &manager.VpcepServiceOutput{ServiceId: testVpcepServiceId},
 				getPermissionsErr: errors.New("query permissions failed"),
 			},
-			lbmDnsService:            &mockLbmDnsService{},
+			lbmDnsManager:            &mockLbmDnsService{},
 			expectedServiceGetCalls:  1,
 			expectedEndpointGetCalls: 0,
 			expectedDnsGetCalls:      0,
@@ -756,7 +756,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			resourceWithMocks := newM1ToM3ResourceWithMocks(tc.endpointService, tc.vpcepService, tc.lbmDnsService)
+			resourceWithMocks := newM1ToM3ResourceWithMocks(tc.endpointService, tc.vpcepService, tc.lbmDnsManager)
 			req := resource.ReadRequest{State: newM1ToM3StateWithModel(t, newM1ToM3Model())}
 			if tc.unknownState {
 				req.State = newUnknownM1ToM3State(t)
@@ -767,12 +767,12 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 
 			assert.Equal(t, tc.expectedServiceGetCalls, tc.vpcepService.getCalls)
 			assert.Equal(t, tc.expectedEndpointGetCalls, tc.endpointService.getCalls)
-			assert.Equal(t, tc.expectedDnsGetCalls, tc.lbmDnsService.getDetailCalls)
+			assert.Equal(t, tc.expectedDnsGetCalls, tc.lbmDnsManager.getDetailCalls)
 			assert.Equal(t, tc.expectedPermissionsCalls, tc.vpcepService.getPermissionsCalls)
 			// 调用 ID 断言前置到错误分支之前；未触发的 Get 调用会保留空字符串零值，可以同时覆盖短路场景下“不应继续查询后续子资源”的行为
 			assert.Equal(t, tc.expectedServiceGetId, tc.vpcepService.getId)
 			assert.Equal(t, tc.expectedEndpointGetId, tc.endpointService.getId)
-			assert.Equal(t, tc.expectedLbmDnsGetId, tc.lbmDnsService.getDetailId)
+			assert.Equal(t, tc.expectedLbmDnsGetId, tc.lbmDnsManager.getDetailId)
 			assert.Equal(t, tc.expectedPermissionsGetId, tc.vpcepService.getPermissionsId)
 			if tc.expectedErr != "" {
 				require.True(t, resp.Diagnostics.HasError())
@@ -786,7 +786,7 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 				return
 			}
 
-			var actual netConnectM1ToM3Model
+			var actual netConnectM1ToM3ResourceModel
 			diags := resp.State.Get(ctx, &actual)
 			require.False(t, diags.HasError(), "expected state get without diagnostics, got %v", diags)
 			if tc.expectedState != nil {
@@ -799,13 +799,13 @@ func Test_netConnectM1ToM3Resource_Read(t *testing.T) {
 func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 	testCases := []struct {
 		name                     string
-		output                   *service.VpcepServiceOutput
+		output                   *manager.VpcepServiceOutput
 		err                      error
 		permissions              map[string]string
 		permissionsErr           error
-		state                    netConnectM1ToM3Model
+		state                    netConnectM1ToM3ResourceModel
 		expectedErrMsg           string
-		expectedState            *netConnectM1ToM3Model
+		expectedState            *netConnectM1ToM3ResourceModel
 		expectedServiceGetId     string
 		expectedPermissionsGetId string
 		expectedServiceGetCalls  int
@@ -813,12 +813,12 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 	}{
 		{
 			name: "GIVEN null service id WHEN refreshVpcepServiceState SHOULD skip query",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.VpcepServiceId = types.StringNull()
 				return state
 			}(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepServiceId = types.StringNull()
 				return &expected
@@ -826,16 +826,16 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 		},
 		{
 			name: "GIVEN service exists WHEN refreshVpcepServiceState SHOULD sync service fields",
-			output: &service.VpcepServiceOutput{
+			output: &manager.VpcepServiceOutput{
 				ServiceId:  testVpcepServiceId,
 				VpcId:      testM3VpcId,
 				PortId:     testM3PortId,
 				ServerType: testM3ServerType,
-				Ports:      []service.PortPair{{ClientPort: 443, ServerPort: 8443}},
+				Ports:      []manager.PortPair{{ClientPort: 443, ServerPort: 8443}},
 			},
 			permissions: map[string]string{testIamDomainId: testPermissionId},
 			state:       newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M3VpcId = testM3VpcId
 				expected.M3PortId = testM3PortId
@@ -852,10 +852,10 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 		{
 			name:  "GIVEN service is missing WHEN refreshVpcepServiceState SHOULD clear service state",
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepServiceId = types.StringNull()
-				clearM1ToM3ServiceInputState(&expected)
+				clearM1ToM3VpcepServiceInputState(&expected)
 				return &expected
 			}(),
 			expectedServiceGetId:    testVpcepServiceId,
@@ -871,7 +871,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 		},
 		{
 			name:                     "GIVEN permission query fails WHEN refreshVpcepServiceState SHOULD return wrapped error",
-			output:                   &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+			output:                   &manager.VpcepServiceOutput{ServiceId: testVpcepServiceId},
 			permissionsErr:           errors.New("query permission failed"),
 			state:                    newM1ToM3Model(),
 			expectedErrMsg:           "query vpcep-service permission failed: query permission failed",
@@ -882,10 +882,10 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 		},
 		{
 			name:        "GIVEN service exists with empty permissions WHEN refreshVpcepServiceState SHOULD sync service fields with empty permissions",
-			output:      &service.VpcepServiceOutput{ServiceId: testVpcepServiceId},
+			output:      &manager.VpcepServiceOutput{ServiceId: testVpcepServiceId},
 			permissions: map[string]string{},
 			state:       newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M3VpcepServicePermissions = nil
 				return &expected
@@ -929,22 +929,22 @@ func Test_netConnectM1ToM3Resource_refreshVpcepServiceState(t *testing.T) {
 func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 	testCases := []struct {
 		name                     string
-		output                   *service.VpcepEndpointOutput
+		output                   *manager.VpcepEndpointOutput
 		err                      error
-		state                    netConnectM1ToM3Model
+		state                    netConnectM1ToM3ResourceModel
 		expectedErrMsg           string
-		expectedState            *netConnectM1ToM3Model
+		expectedState            *netConnectM1ToM3ResourceModel
 		expectedEndpointGetId    string
 		expectedEndpointGetCalls int
 	}{
 		{
 			name: "GIVEN null endpoint id WHEN refreshVpcepEndpointState SHOULD skip query",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.VpcepEndpointId = types.StringNull()
 				return state
 			}(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepEndpointId = types.StringNull()
 				return &expected
@@ -952,7 +952,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint exists WHEN refreshVpcepEndpointState SHOULD sync endpoint fields",
-			output: &service.VpcepEndpointOutput{
+			output: &manager.VpcepEndpointOutput{
 				EndpointId: testVpcepEndpointId,
 				Ip:         testVpcepEndpointIp,
 				VpcId:      testM1PlusVpcId,
@@ -960,7 +960,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 				ServiceId:  testVpcepServiceId,
 			},
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepEndpointIp = types.StringValue(testVpcepEndpointIp)
 				expected.M1PlusVpcId = testM1PlusVpcId
@@ -974,7 +974,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 		{
 			name:  "GIVEN endpoint is missing WHEN refreshVpcepEndpointState SHOULD clear endpoint state",
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepEndpointId = types.StringNull()
 				expected.VpcepEndpointIp = types.StringNull()
@@ -995,7 +995,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint exists with empty ip WHEN refreshVpcepEndpointState SHOULD keep original ip value",
-			output: &service.VpcepEndpointOutput{
+			output: &manager.VpcepEndpointOutput{
 				EndpointId: testVpcepEndpointId,
 				Ip:         "",
 				VpcId:      testM1PlusVpcId,
@@ -1003,7 +1003,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 				ServiceId:  "",
 			},
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.M1PlusVpcId = testM1PlusVpcId
 				expected.M1PlusSubnetId = testM1PlusSubnetId
@@ -1014,7 +1014,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint exists with empty vpc and subnet WHEN refreshVpcepEndpointState SHOULD keep original network values",
-			output: &service.VpcepEndpointOutput{
+			output: &manager.VpcepEndpointOutput{
 				EndpointId: testVpcepEndpointId,
 				Ip:         testVpcepEndpointIp,
 				VpcId:      "",
@@ -1022,7 +1022,7 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 				ServiceId:  testVpcepServiceId,
 			},
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.VpcepEndpointIp = types.StringValue(testVpcepEndpointIp)
 				expected.VpcepEndpointServiceId = types.StringValue(testVpcepServiceId)
@@ -1061,23 +1061,23 @@ func Test_netConnectM1ToM3Resource_refreshVpcepEndpointState(t *testing.T) {
 func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 	testCases := []struct {
 		name                   string
-		output                 *service.LbmDnsDetailOutput
+		output                 *manager.LbmDnsDetailOutput
 		err                    error
-		state                  netConnectM1ToM3Model
+		state                  netConnectM1ToM3ResourceModel
 		expectedErrMsg         string
 		expectedErrDetail      string
-		expectedState          *netConnectM1ToM3Model
+		expectedState          *netConnectM1ToM3ResourceModel
 		expectedLbmDnsGetId    string
 		expectedLbmDnsGetCalls int
 	}{
 		{
 			name: "GIVEN null dns record id WHEN refreshLbmDnsState SHOULD skip query",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.LbmDnsRecordId = types.StringNull()
 				return state
 			}(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.LbmDnsRecordId = types.StringNull()
 				return &expected
@@ -1085,16 +1085,16 @@ func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 		},
 		{
 			name: "GIVEN dns record exists WHEN refreshLbmDnsState SHOULD sync dns fields",
-			output: &service.LbmDnsDetailOutput{
+			output: &manager.LbmDnsDetailOutput{
 				RecordId:     testLbmDnsRecordId,
 				RegionCode:   testRegionCode,
 				ServiceName:  testLbmDnsServiceName,
 				HostRecord:   testDnsDomain,
 				DomainSuffix: testDnsDomainSuffix,
-				RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+				RecordValues: []manager.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 			},
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.RegionCode = testRegionCode
 				expected.LbmDnsServiceName = testLbmDnsServiceName
@@ -1110,7 +1110,7 @@ func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 		{
 			name:  "GIVEN dns record is missing WHEN refreshLbmDnsState SHOULD clear dns state",
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.LbmDnsRecordId = types.StringNull()
 				expected.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
@@ -1131,7 +1131,7 @@ func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 		},
 		{
 			name: "GIVEN dns record exists with empty record values WHEN refreshLbmDnsState SHOULD sync dns fields with empty record values",
-			output: &service.LbmDnsDetailOutput{
+			output: &manager.LbmDnsDetailOutput{
 				RecordId:     testLbmDnsRecordId,
 				RegionCode:   testRegionCode,
 				ServiceName:  testLbmDnsServiceName,
@@ -1139,7 +1139,7 @@ func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 				DomainSuffix: testDnsDomainSuffix,
 			},
 			state: newM1ToM3Model(),
-			expectedState: func() *netConnectM1ToM3Model {
+			expectedState: func() *netConnectM1ToM3ResourceModel {
 				expected := newM1ToM3Model()
 				expected.RegionCode = testRegionCode
 				expected.LbmDnsServiceName = testLbmDnsServiceName
@@ -1155,18 +1155,18 @@ func Test_netConnectM1ToM3Resource_refreshLbmDnsState(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lbmDnsService := &mockLbmDnsService{
+			lbmDnsManager := &mockLbmDnsService{
 				getDetailOutput: tc.output,
 				getDetailErr:    tc.err,
 			}
 			target := newM1ToM3ResourceWithMocks(&mockVpcepEndpointService{}, &mockVpcepServiceService{},
-				lbmDnsService)
+				lbmDnsManager)
 			state := tc.state
 
 			diags := target.refreshLbmDnsState(context.Background(), &state)
 
-			assert.Equal(t, tc.expectedLbmDnsGetCalls, lbmDnsService.getDetailCalls)
-			assert.Equal(t, tc.expectedLbmDnsGetId, lbmDnsService.getDetailId)
+			assert.Equal(t, tc.expectedLbmDnsGetCalls, lbmDnsManager.getDetailCalls)
+			assert.Equal(t, tc.expectedLbmDnsGetId, lbmDnsManager.getDetailId)
 			if tc.expectedErrMsg != "" {
 				assertDiagnostics(t, tc.expectedErrMsg, tc.expectedErrDetail, diags)
 				return
@@ -1295,7 +1295,7 @@ func TestNormalizeM1ToM3ListState(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			state := &netConnectM1ToM3Model{
+			state := &netConnectM1ToM3ResourceModel{
 				M3VpcepServicePorts:       tc.inputPorts,
 				M3VpcepServicePermissions: tc.inputPermissions,
 			}
@@ -1311,12 +1311,12 @@ func TestNormalizeM1ToM3ListState(t *testing.T) {
 func TestNormalizePortPairs(t *testing.T) {
 	testCases := []struct {
 		name     string
-		input    []service.PortPair
+		input    []manager.PortPair
 		expected []vpcepServicePortBlock
 	}{
 		{
 			name: "GIVEN service port pairs WHEN normalizePortPairs SHOULD convert and sort ports",
-			input: []service.PortPair{
+			input: []manager.PortPair{
 				{ClientPort: 443, ServerPort: 8443},
 				{ClientPort: 80, ServerPort: 8080},
 			},
@@ -1327,7 +1327,7 @@ func TestNormalizePortPairs(t *testing.T) {
 		},
 		{
 			name: "GIVEN sorted service port pairs WHEN normalizePortPairs SHOULD keep sorted ports",
-			input: []service.PortPair{
+			input: []manager.PortPair{
 				{ClientPort: 80, ServerPort: 8080},
 				{ClientPort: 443, ServerPort: 8443},
 			},
@@ -1338,7 +1338,7 @@ func TestNormalizePortPairs(t *testing.T) {
 		},
 		{
 			name: "GIVEN service port pairs with same client port WHEN normalizePortPairs SHOULD sort by server port",
-			input: []service.PortPair{
+			input: []manager.PortPair{
 				{ClientPort: 80, ServerPort: 8081},
 				{ClientPort: 80, ServerPort: 8080},
 				{ClientPort: 443, ServerPort: 8443},
@@ -1351,7 +1351,7 @@ func TestNormalizePortPairs(t *testing.T) {
 		},
 		{
 			name: "GIVEN duplicate service port pairs WHEN normalizePortPairs SHOULD keep duplicate ports",
-			input: []service.PortPair{
+			input: []manager.PortPair{
 				{ClientPort: 443, ServerPort: 8443},
 				{ClientPort: 80, ServerPort: 8080},
 				{ClientPort: 80, ServerPort: 8080},
@@ -1364,7 +1364,7 @@ func TestNormalizePortPairs(t *testing.T) {
 		},
 		{
 			name:     "GIVEN empty service port pairs WHEN normalizePortPairs SHOULD return empty ports",
-			input:    []service.PortPair{},
+			input:    []manager.PortPair{},
 			expected: nil,
 		},
 	}
@@ -1609,7 +1609,7 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 	knownValues := mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
 		{RecordType: "A", RecordValue: "10.0.0.9"},
 	})
-	state := netConnectM1ToM3Model{
+	state := netConnectM1ToM3ResourceModel{
 		VpcepServiceId:         types.StringValue(testVpcepServiceId),
 		VpcepEndpointId:        types.StringValue(testVpcepEndpointId),
 		VpcepEndpointIp:        types.StringValue(testVpcepEndpointIp),
@@ -1617,7 +1617,7 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 		LbmDnsRecordId:         types.StringValue(testLbmDnsRecordId),
 		LbmDnsRecordValues:     stateValues,
 	}
-	unknownPlan := netConnectM1ToM3Model{
+	unknownPlan := netConnectM1ToM3ResourceModel{
 		VpcepServiceId:         types.StringUnknown(),
 		VpcepEndpointId:        types.StringUnknown(),
 		VpcepEndpointIp:        types.StringUnknown(),
@@ -1625,7 +1625,7 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 		LbmDnsRecordId:         types.StringUnknown(),
 		LbmDnsRecordValues:     types.ListUnknown(lbmDnsRecordValueObjectType),
 	}
-	knownPlan := netConnectM1ToM3Model{
+	knownPlan := netConnectM1ToM3ResourceModel{
 		VpcepServiceId:         types.StringValue("service-2"),
 		VpcepEndpointId:        types.StringValue("endpoint-2"),
 		VpcepEndpointIp:        types.StringValue("10.0.0.9"),
@@ -1640,8 +1640,8 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
-		expected netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
+		expected netConnectM1ToM3ResourceModel
 	}{
 		{
 			name:     "GIVEN unknown computed fields WHEN preserveKnownComputedFields SHOULD copy state values",
@@ -1671,8 +1671,8 @@ func TestPreserveKnownComputedFields(t *testing.T) {
 	}
 }
 
-func Test_clearM1ToM3ServiceInputState(t *testing.T) {
-	newClearedState := func() netConnectM1ToM3Model {
+func Test_clearM1ToM3VpcepServiceInputState(t *testing.T) {
+	newClearedState := func() netConnectM1ToM3ResourceModel {
 		state := newM1ToM3Model()
 		state.M3VpcId = ""
 		state.M3ServerType = ""
@@ -1688,21 +1688,21 @@ func Test_clearM1ToM3ServiceInputState(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		state    netConnectM1ToM3Model
-		expected netConnectM1ToM3Model
+		state    netConnectM1ToM3ResourceModel
+		expected netConnectM1ToM3ResourceModel
 	}{
 		{
-			name:     "GIVEN populated state WHEN clearM1ToM3ServiceInputState SHOULD clear service input fields only",
+			name:     "GIVEN populated state WHEN clearM1ToM3VpcepServiceInputState SHOULD clear service input fields only",
 			state:    newM1ToM3Model(),
 			expected: newClearedState(),
 		},
 		{
-			name:     "GIVEN partial empty service input fields WHEN clearM1ToM3ServiceInputState SHOULD clear remaining service input fields only",
+			name:     "GIVEN partial empty service input fields WHEN clearM1ToM3VpcepServiceInputState SHOULD clear remaining service input fields only",
 			state:    partialClearedState,
 			expected: newClearedState(),
 		},
 		{
-			name:     "GIVEN empty service input fields WHEN clearM1ToM3ServiceInputState SHOULD keep service input fields empty",
+			name:     "GIVEN empty service input fields WHEN clearM1ToM3VpcepServiceInputState SHOULD keep service input fields empty",
 			state:    newClearedState(),
 			expected: newClearedState(),
 		},
@@ -1712,7 +1712,7 @@ func Test_clearM1ToM3ServiceInputState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			state := tc.state
 
-			clearM1ToM3ServiceInputState(&state)
+			clearM1ToM3VpcepServiceInputState(&state)
 
 			assert.Equal(t, tc.expected, state)
 		})
@@ -1720,7 +1720,7 @@ func Test_clearM1ToM3ServiceInputState(t *testing.T) {
 }
 
 func Test_clearM1ToM3EndpointInputState(t *testing.T) {
-	newClearedState := func() netConnectM1ToM3Model {
+	newClearedState := func() netConnectM1ToM3ResourceModel {
 		state := newM1ToM3Model()
 		state.M1PlusVpcId = ""
 		state.M1PlusSubnetId = ""
@@ -1732,8 +1732,8 @@ func Test_clearM1ToM3EndpointInputState(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		state    netConnectM1ToM3Model
-		expected netConnectM1ToM3Model
+		state    netConnectM1ToM3ResourceModel
+		expected netConnectM1ToM3ResourceModel
 	}{
 		{
 			name:     "GIVEN populated state WHEN clearM1ToM3EndpointInputState SHOULD clear endpoint input fields only",
@@ -1764,7 +1764,7 @@ func Test_clearM1ToM3EndpointInputState(t *testing.T) {
 }
 
 func Test_clearM1ToM3DnsInputState(t *testing.T) {
-	newClearedState := func() netConnectM1ToM3Model {
+	newClearedState := func() netConnectM1ToM3ResourceModel {
 		state := newM1ToM3Model()
 		state.DnsDomain = ""
 		state.DnsDomainSuffix = ""
@@ -1779,8 +1779,8 @@ func Test_clearM1ToM3DnsInputState(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		state    netConnectM1ToM3Model
-		expected netConnectM1ToM3Model
+		state    netConnectM1ToM3ResourceModel
+		expected netConnectM1ToM3ResourceModel
 	}{
 		{
 			name:     "GIVEN populated state WHEN clearM1ToM3DnsInputState SHOULD clear dns input fields only",
@@ -1811,7 +1811,7 @@ func Test_clearM1ToM3DnsInputState(t *testing.T) {
 }
 
 func Test_m1ToM3AllChildIdentitiesMissing(t *testing.T) {
-	newState := func(serviceMissing, endpointMissing, dnsMissing bool) netConnectM1ToM3Model {
+	newState := func(serviceMissing, endpointMissing, dnsMissing bool) netConnectM1ToM3ResourceModel {
 		state := newM1ToM3Model()
 		if serviceMissing {
 			state.VpcepServiceId = types.StringNull()
@@ -1827,7 +1827,7 @@ func Test_m1ToM3AllChildIdentitiesMissing(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		state    netConnectM1ToM3Model
+		state    netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
@@ -1864,17 +1864,17 @@ func Test_m1ToM3AllChildIdentitiesMissing(t *testing.T) {
 func TestServiceRequiresReplacement(t *testing.T) {
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
-			name:     "GIVEN same service identity WHEN serviceRequiresReplacement SHOULD return false",
+			name:     "GIVEN same service identity WHEN vpcepServiceRequiresReplacement SHOULD return false",
 			plan:     newM1ToM3Model(),
 			expected: false,
 		},
 		{
-			name: "GIVEN changed m3 vpc WHEN serviceRequiresReplacement SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed m3 vpc WHEN vpcepServiceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3VpcId = "vpc-2"
 				return plan
@@ -1882,8 +1882,8 @@ func TestServiceRequiresReplacement(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "GIVEN changed server type WHEN serviceRequiresReplacement SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed server type WHEN vpcepServiceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3ServerType = "VM"
 				return plan
@@ -1891,8 +1891,8 @@ func TestServiceRequiresReplacement(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "GIVEN empty m3 vpc WHEN serviceRequiresReplacement SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN empty m3 vpc WHEN vpcepServiceRequiresReplacement SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3VpcId = ""
 				return plan
@@ -1903,7 +1903,7 @@ func TestServiceRequiresReplacement(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := serviceRequiresReplacement(newM1ToM3Model(), tc.plan)
+			actual := vpcepServiceRequiresReplacement(newM1ToM3Model(), tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
@@ -1913,17 +1913,17 @@ func TestServiceRequiresReplacement(t *testing.T) {
 func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
-			name:     "GIVEN same service config WHEN serviceRequiresInPlaceUpdate SHOULD return false",
+			name:     "GIVEN same service config WHEN vpcepServiceRequiresInPlaceUpdate SHOULD return false",
 			plan:     newM1ToM3Model(),
 			expected: false,
 		},
 		{
-			name: "GIVEN changed service port config WHEN serviceRequiresInPlaceUpdate SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed service port config WHEN vpcepServiceRequiresInPlaceUpdate SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3PortId = "port-2"
 				return plan
@@ -1931,8 +1931,8 @@ func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "GIVEN changed service permissions WHEN serviceRequiresInPlaceUpdate SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed service permissions WHEN vpcepServiceRequiresInPlaceUpdate SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-id-c"}}
 				return plan
@@ -1943,7 +1943,7 @@ func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := serviceRequiresInPlaceUpdate(newM1ToM3Model(), tc.plan)
+			actual := vpcepServiceRequiresInPlaceUpdate(newM1ToM3Model(), tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
@@ -1953,17 +1953,17 @@ func TestServiceRequiresInPlaceUpdate(t *testing.T) {
 func TestServicePortConfigChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
-			name:     "GIVEN identical ports WHEN servicePortConfigChanged SHOULD return false",
+			name:     "GIVEN identical ports WHEN vpcepServicePortConfigChanged SHOULD return false",
 			plan:     newM1ToM3Model(),
 			expected: false,
 		},
 		{
-			name: "GIVEN same ports in reordered order WHEN servicePortConfigChanged SHOULD return false",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN same ports in reordered order WHEN vpcepServicePortConfigChanged SHOULD return false",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				ports := testVpcepServicePorts()
 				plan.M3VpcepServicePorts = []vpcepServicePortBlock{ports[1], ports[0]}
@@ -1972,8 +1972,8 @@ func TestServicePortConfigChanged(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "GIVEN changed port id WHEN servicePortConfigChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed port id WHEN vpcepServicePortConfigChanged SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3PortId = "port-2"
 				return plan
@@ -1981,8 +1981,8 @@ func TestServicePortConfigChanged(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "GIVEN changed ports WHEN servicePortConfigChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed ports WHEN vpcepServicePortConfigChanged SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3VpcepServicePorts = []vpcepServicePortBlock{{ClientPort: 8080, ServerPort: 8080}}
 				return plan
@@ -1993,7 +1993,7 @@ func TestServicePortConfigChanged(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := servicePortConfigChanged(newM1ToM3Model(), tc.plan)
+			actual := vpcepServicePortConfigChanged(newM1ToM3Model(), tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
@@ -2003,17 +2003,17 @@ func TestServicePortConfigChanged(t *testing.T) {
 func TestServicePermissionsChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
-			name:     "GIVEN identical permissions WHEN servicePermissionsChanged SHOULD return false",
+			name:     "GIVEN identical permissions WHEN vpcepServicePermissionsChanged SHOULD return false",
 			plan:     newM1ToM3Model(),
 			expected: false,
 		},
 		{
-			name: "GIVEN same permissions in reordered order WHEN servicePermissionsChanged SHOULD return false",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN same permissions in reordered order WHEN vpcepServicePermissionsChanged SHOULD return false",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				permissions := testVpcepServicePermissions()
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{permissions[1], permissions[0]}
@@ -2022,8 +2022,8 @@ func TestServicePermissionsChanged(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "GIVEN changed permissions WHEN servicePermissionsChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			name: "GIVEN changed permissions WHEN vpcepServicePermissionsChanged SHOULD return true",
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: "domain-c"}}
 				return plan
@@ -2034,7 +2034,7 @@ func TestServicePermissionsChanged(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := servicePermissionsChanged(newM1ToM3Model(), tc.plan)
+			actual := vpcepServicePermissionsChanged(newM1ToM3Model(), tc.plan)
 
 			assert.Equal(t, tc.expected, actual)
 		})
@@ -2044,8 +2044,8 @@ func TestServicePermissionsChanged(t *testing.T) {
 func TestShouldReplaceEndpoint(t *testing.T) {
 	testCases := []struct {
 		name            string
-		state           netConnectM1ToM3Model
-		plan            netConnectM1ToM3Model
+		state           netConnectM1ToM3ResourceModel
+		plan            netConnectM1ToM3ResourceModel
 		serviceReplaced bool
 		expected        bool
 	}{
@@ -2057,7 +2057,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint id is null WHEN shouldReplaceEndpoint SHOULD return false",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.VpcepEndpointId = types.StringNull()
 				return state
@@ -2075,7 +2075,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		{
 			name:  "GIVEN endpoint vpc changed WHEN shouldReplaceEndpoint SHOULD return true",
 			state: newM1ToM3Model(),
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M1PlusVpcId = "m1-vpc-2"
 				return plan
@@ -2085,7 +2085,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		{
 			name:  "GIVEN endpoint subnet changed WHEN shouldReplaceEndpoint SHOULD return true",
 			state: newM1ToM3Model(),
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.M1PlusSubnetId = "subnet-2"
 				return plan
@@ -2094,7 +2094,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint service id is null WHEN shouldReplaceEndpoint SHOULD return true",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.VpcepEndpointServiceId = types.StringNull()
 				return state
@@ -2105,7 +2105,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		{
 			name:  "GIVEN plan service id is null WHEN shouldReplaceEndpoint SHOULD return true",
 			state: newM1ToM3Model(),
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.VpcepServiceId = types.StringNull()
 				return plan
@@ -2115,7 +2115,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		{
 			name:  "GIVEN plan service id is unknown WHEN shouldReplaceEndpoint SHOULD return true",
 			state: newM1ToM3Model(),
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.VpcepServiceId = types.StringUnknown()
 				return plan
@@ -2124,7 +2124,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 		},
 		{
 			name: "GIVEN endpoint service id differs from plan service id WHEN shouldReplaceEndpoint SHOULD return true",
-			state: func() netConnectM1ToM3Model {
+			state: func() netConnectM1ToM3ResourceModel {
 				state := newM1ToM3Model()
 				state.VpcepEndpointServiceId = types.StringValue("service-old")
 				return state
@@ -2146,7 +2146,7 @@ func TestShouldReplaceEndpoint(t *testing.T) {
 func TestDnsIdentityChanged(t *testing.T) {
 	testCases := []struct {
 		name     string
-		plan     netConnectM1ToM3Model
+		plan     netConnectM1ToM3ResourceModel
 		expected bool
 	}{
 		{
@@ -2156,7 +2156,7 @@ func TestDnsIdentityChanged(t *testing.T) {
 		},
 		{
 			name: "GIVEN changed region code WHEN dnsIdentityChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.RegionCode = "region-2"
 				return plan
@@ -2165,7 +2165,7 @@ func TestDnsIdentityChanged(t *testing.T) {
 		},
 		{
 			name: "GIVEN changed dns domain WHEN dnsIdentityChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.DnsDomain = "api2"
 				return plan
@@ -2174,7 +2174,7 @@ func TestDnsIdentityChanged(t *testing.T) {
 		},
 		{
 			name: "GIVEN changed dns domain suffix WHEN dnsIdentityChanged SHOULD return true",
-			plan: func() netConnectM1ToM3Model {
+			plan: func() netConnectM1ToM3ResourceModel {
 				plan := newM1ToM3Model()
 				plan.DnsDomainSuffix = "internal2"
 				return plan
@@ -2318,7 +2318,7 @@ func TestConvertPorts(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePortBlock
-		expected []service.PortPair
+		expected []manager.PortPair
 	}{
 		{
 			name: "GIVEN resource port blocks WHEN convertPorts SHOULD keep port values",
@@ -2326,7 +2326,7 @@ func TestConvertPorts(t *testing.T) {
 				{ClientPort: 80, ServerPort: 8080},
 				{ClientPort: 443, ServerPort: 8443},
 			},
-			expected: []service.PortPair{
+			expected: []manager.PortPair{
 				{ClientPort: 80, ServerPort: 8080},
 				{ClientPort: 443, ServerPort: 8443},
 			},
@@ -2334,7 +2334,7 @@ func TestConvertPorts(t *testing.T) {
 		{
 			name:     "GIVEN empty resource port blocks WHEN convertPorts SHOULD return empty port pairs",
 			input:    []vpcepServicePortBlock{},
-			expected: []service.PortPair{},
+			expected: []manager.PortPair{},
 		},
 	}
 
@@ -2351,12 +2351,12 @@ func TestConvertPermissions(t *testing.T) {
 	testCases := []struct {
 		name     string
 		input    []vpcepServicePermissionBlock
-		expected []service.PermissionInput
+		expected []manager.PermissionInput
 	}{
 		{
 			name:  "GIVEN resource permission blocks WHEN convertPermissions SHOULD keep permission values",
 			input: testVpcepServicePermissions(),
-			expected: []service.PermissionInput{
+			expected: []manager.PermissionInput{
 				{Permission: testIamDomainId},
 				{Permission: testAnotherIamDomainId},
 			},
@@ -2364,7 +2364,7 @@ func TestConvertPermissions(t *testing.T) {
 		{
 			name:     "GIVEN empty permission blocks WHEN convertPermissions SHOULD return empty permission inputs",
 			input:    []vpcepServicePermissionBlock{},
-			expected: []service.PermissionInput{},
+			expected: []manager.PermissionInput{},
 		},
 	}
 
@@ -2438,8 +2438,8 @@ func TestBuildLbmDnsRecordValuesErrorBranches(t *testing.T) {
 	}
 }
 
-func newM1ToM3Model() netConnectM1ToM3Model {
-	return netConnectM1ToM3Model{
+func newM1ToM3Model() netConnectM1ToM3ResourceModel {
+	return netConnectM1ToM3ResourceModel{
 		M3VpcId:                   testM3VpcId,
 		M3ServerType:              testM3ServerType,
 		M3PortId:                  testM3PortId,
@@ -2508,10 +2508,10 @@ func assertRecordValueList(t *testing.T, expected []lbmDnsRecordValueBlock, actu
 	assert.Equal(t, expected, actualBlocks)
 }
 
-// assertM1ToM3State 逐字段比较 netConnectM1ToM3Model，不使用 assert.Equal 是因为
+// assertM1ToM3State 逐字段比较 netConnectM1ToM3ResourceModel，不使用 assert.Equal 是因为
 // LbmDnsRecordValues (types.List) 的内部状态无法通过 reflect.DeepEqual 可靠比较，
 // 需要先判断 IsNull/IsUnknown，再解码后逐元素比较。
-func assertM1ToM3State(t *testing.T, expected, actual netConnectM1ToM3Model) {
+func assertM1ToM3State(t *testing.T, expected, actual netConnectM1ToM3ResourceModel) {
 	t.Helper()
 
 	assert.Equal(t, expected.M3VpcId, actual.M3VpcId)
@@ -2548,13 +2548,13 @@ type mockVpcepEndpointService struct {
 	deleteErr        error
 	getId            string
 	getCalls         int
-	getOutput        *service.VpcepEndpointOutput
+	getOutput        *manager.VpcepEndpointOutput
 	getErr           error
-	createInputs     []service.VpcEndpointInput
+	createInputs     []manager.VpcEndpointInput
 	deleteIds        []string
 }
 
-func (f *mockVpcepEndpointService) Create(_ context.Context, input service.VpcEndpointInput) (string, string, error) {
+func (f *mockVpcepEndpointService) Create(_ context.Context, input manager.VpcEndpointInput) (string, string, error) {
 	f.createInputs = append(f.createInputs, input)
 	return f.createEndpointId, f.createEndpointIp, f.createErr
 }
@@ -2564,7 +2564,7 @@ func (f *mockVpcepEndpointService) Delete(_ context.Context, endpointId string) 
 	return f.deleteErr
 }
 
-func (f *mockVpcepEndpointService) Get(_ context.Context, endpointId string) (*service.VpcepEndpointOutput, error) {
+func (f *mockVpcepEndpointService) Get(_ context.Context, endpointId string) (*manager.VpcepEndpointOutput, error) {
 	f.getId = endpointId
 	f.getCalls++
 	return f.getOutput, f.getErr
@@ -2577,19 +2577,19 @@ type mockVpcepServiceService struct {
 	deleteErr            error
 	getId                string
 	getCalls             int
-	getOutput            *service.VpcepServiceOutput
+	getOutput            *manager.VpcepServiceOutput
 	getErr               error
 	getPermissionsId     string
 	getPermissionsCalls  int
 	getPermissionsOutput map[string]string
 	getPermissionsErr    error
-	createInputs         []service.VpcepServiceInput
+	createInputs         []manager.VpcepServiceInput
 	deleteIds            []string
 	addServiceIds        []string
-	addPermissions       [][]service.PermissionInput
+	addPermissions       [][]manager.PermissionInput
 }
 
-func (f *mockVpcepServiceService) Create(_ context.Context, input service.VpcepServiceInput) (string, error) {
+func (f *mockVpcepServiceService) Create(_ context.Context, input manager.VpcepServiceInput) (string, error) {
 	f.createInputs = append(f.createInputs, input)
 	return f.createServiceId, f.createErr
 }
@@ -2599,14 +2599,14 @@ func (f *mockVpcepServiceService) Delete(_ context.Context, serviceId string) er
 	return f.deleteErr
 }
 
-func (f *mockVpcepServiceService) Get(_ context.Context, serviceId string) (*service.VpcepServiceOutput, error) {
+func (f *mockVpcepServiceService) Get(_ context.Context, serviceId string) (*manager.VpcepServiceOutput, error) {
 	f.getId = serviceId
 	f.getCalls++
 	return f.getOutput, f.getErr
 }
 
 func (f *mockVpcepServiceService) AddPermissions(_ context.Context, serviceId string,
-	permissions []service.PermissionInput) error {
+	permissions []manager.PermissionInput) error {
 	f.addServiceIds = append(f.addServiceIds, serviceId)
 	f.addPermissions = append(f.addPermissions, permissions)
 	return f.addErr
@@ -2619,27 +2619,27 @@ func (f *mockVpcepServiceService) GetPermissions(_ context.Context, serviceId st
 }
 
 func (f *mockVpcepServiceService) UpdateConfig(_ context.Context, _ string,
-	_ service.VpcepServiceInput) error {
+	_ manager.VpcepServiceInput) error {
 	return nil
 }
 
 func (f *mockVpcepServiceService) ReconcilePermissions(_ context.Context, _ string,
-	_ []service.PermissionInput) error {
+	_ []manager.PermissionInput) error {
 	return nil
 }
 
 type mockLbmDnsService struct {
-	createOutput    *service.CreateLbmDnsOutput
+	createOutput    *manager.CreateLbmDnsOutput
 	createErr       error
 	getDetailId     string
 	getDetailCalls  int
-	getDetailOutput *service.LbmDnsDetailOutput
+	getDetailOutput *manager.LbmDnsDetailOutput
 	getDetailErr    error
-	createInputs    []service.CreateLbmDnsInput
+	createInputs    []manager.CreateLbmDnsInput
 }
 
 func (f *mockLbmDnsService) CreateIntranetDnsDomain(_ context.Context,
-	input service.CreateLbmDnsInput) (*service.CreateLbmDnsOutput, error) {
+	input manager.CreateLbmDnsInput) (*manager.CreateLbmDnsOutput, error) {
 	f.createInputs = append(f.createInputs, input)
 	return f.createOutput, f.createErr
 }
@@ -2653,22 +2653,22 @@ func (f *mockLbmDnsService) UpdateRecordValue(_ context.Context, _ string, _ str
 }
 
 func (f *mockLbmDnsService) GetLbmDnsDetail(_ context.Context,
-	recordId string) (*service.LbmDnsDetailOutput, error) {
+	recordId string) (*manager.LbmDnsDetailOutput, error) {
 	f.getDetailId = recordId
 	f.getDetailCalls++
 	return f.getDetailOutput, f.getDetailErr
 }
 
-func newM1ToM3ResourceWithMocks(endpoint m1ToM3VpcepEndpointService, vpcep m1ToM3VpcepService,
-	dns m1ToM3LbmDnsService) *netConnectM1ToM3Resource {
+func newM1ToM3ResourceWithMocks(endpoint m1ToM3VpcepEndpointManager, vpcep m1ToM3VpcepServiceManager,
+	dns m1ToM3LbmDnsManager) *netConnectM1ToM3Resource {
 	return &netConnectM1ToM3Resource{
-		m1PlusVpcepService: endpoint,
-		m3VpcepService:     vpcep,
-		lbmDnsService:      dns,
+		m1PlusVpcepEndpointManager: endpoint,
+		m3VpcepServiceManager:      vpcep,
+		lbmDnsManager:              dns,
 	}
 }
 
-func newM1ToM3Plan(t *testing.T, model netConnectM1ToM3Model) tfsdk.Plan {
+func newM1ToM3Plan(t *testing.T, model netConnectM1ToM3ResourceModel) tfsdk.Plan {
 	t.Helper()
 
 	plan := tfsdk.Plan{Schema: m1ToM3Schema(t)}
@@ -2687,7 +2687,7 @@ func newUnknownM1ToM3Plan(t *testing.T) tfsdk.Plan {
 	}
 }
 
-func newM1ToM3StateWithModel(t *testing.T, model netConnectM1ToM3Model) tfsdk.State {
+func newM1ToM3StateWithModel(t *testing.T, model netConnectM1ToM3ResourceModel) tfsdk.State {
 	t.Helper()
 
 	state := newM1ToM3State(t)
@@ -2721,7 +2721,7 @@ func m1ToM3Schema(t *testing.T) schema.Schema {
 	return resp.Schema
 }
 
-func newM1ToM3CreateModel() netConnectM1ToM3Model {
+func newM1ToM3CreateModel() netConnectM1ToM3ResourceModel {
 	model := newM1ToM3Model()
 	model.VpcepServiceId = types.StringNull()
 	model.VpcepEndpointId = types.StringNull()
@@ -2732,35 +2732,35 @@ func newM1ToM3CreateModel() netConnectM1ToM3Model {
 	return model
 }
 
-func newExpectedM1ToM3VpcepServiceInput() *service.VpcepServiceInput {
-	return &service.VpcepServiceInput{
+func newExpectedM1ToM3VpcepServiceInput() *manager.VpcepServiceInput {
+	return &manager.VpcepServiceInput{
 		VpcId:      testM3VpcId,
 		PortId:     testM3PortId,
 		ServerType: testM3ServerType,
-		Ports: []service.PortPair{
+		Ports: []manager.PortPair{
 			{ClientPort: 80, ServerPort: 8080},
 			{ClientPort: 443, ServerPort: 8443},
 		},
 	}
 }
 
-func newExpectedM1ToM3PermissionInputs() []service.PermissionInput {
-	return []service.PermissionInput{
+func newExpectedM1ToM3PermissionInputs() []manager.PermissionInput {
+	return []manager.PermissionInput{
 		{Permission: testIamDomainId},
 		{Permission: testAnotherIamDomainId},
 	}
 }
 
-func newExpectedM1ToM3EndpointInput() *service.VpcEndpointInput {
-	return &service.VpcEndpointInput{
+func newExpectedM1ToM3EndpointInput() *manager.VpcEndpointInput {
+	return &manager.VpcEndpointInput{
 		EndpointServiceId: testVpcepServiceId,
 		VpcId:             testM1PlusVpcId,
 		SubnetId:          testM1PlusSubnetId,
 	}
 }
 
-func newExpectedM1ToM3LbmDnsInput() *service.CreateLbmDnsInput {
-	return &service.CreateLbmDnsInput{
+func newExpectedM1ToM3LbmDnsInput() *manager.CreateLbmDnsInput {
+	return &manager.CreateLbmDnsInput{
 		RegionCode:   testRegionCode,
 		ServiceName:  testLbmDnsServiceName,
 		HostRecord:   testDnsDomain,
@@ -2769,9 +2769,9 @@ func newExpectedM1ToM3LbmDnsInput() *service.CreateLbmDnsInput {
 	}
 }
 
-func newCreateLbmDnsOutput() *service.CreateLbmDnsOutput {
-	return &service.CreateLbmDnsOutput{
+func newCreateLbmDnsOutput() *manager.CreateLbmDnsOutput {
+	return &manager.CreateLbmDnsOutput{
 		RecordId:     testLbmDnsRecordId,
-		RecordValues: []service.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
+		RecordValues: []manager.LbmDnsRecordValue{{RecordType: "A", RecordValue: testVpcepEndpointIp}},
 	}
 }
