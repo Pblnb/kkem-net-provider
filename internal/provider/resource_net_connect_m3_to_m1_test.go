@@ -16,12 +16,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
-
-	"huawei.com/kkem/kkem-net-provider/internal/client/sniproxyclient"
-	"huawei.com/kkem/kkem-net-provider/internal/manager"
 )
 
-func m3ToM1Schema(t *testing.T) schema.Schema {
+func m3ToM1ResourceSchema(t *testing.T) schema.Schema {
 	t.Helper()
 	resp := &resource.SchemaResponse{}
 	(&netConnectM3ToM1Resource{}).Schema(context.Background(), resource.SchemaRequest{}, resp)
@@ -29,17 +26,17 @@ func m3ToM1Schema(t *testing.T) schema.Schema {
 	return resp.Schema
 }
 
-func newM3ToM1Plan(t *testing.T, model netConnectM3ToM1ResourceModel) tfsdk.Plan {
+func newM3ToM1ResourcePlan(t *testing.T, model netConnectM3ToM1ResourceModel) tfsdk.Plan {
 	t.Helper()
-	plan := tfsdk.Plan{Schema: m3ToM1Schema(t)}
+	plan := tfsdk.Plan{Schema: m3ToM1ResourceSchema(t)}
 	diags := plan.Set(context.Background(), &model)
 	assert.False(t, diags.HasError(), "failed to set plan: %v", diags)
 	return plan
 }
 
-func newM3ToM1State(t *testing.T) tfsdk.State {
+func newM3ToM1ResourceState(t *testing.T) tfsdk.State {
 	t.Helper()
-	return tfsdk.State{Schema: m3ToM1Schema(t)}
+	return tfsdk.State{Schema: m3ToM1ResourceSchema(t)}
 }
 
 func Test_netConnectM3ToM1Resource_Schema(t *testing.T) {
@@ -178,7 +175,7 @@ func Test_netConnectM3ToM1Resource_Metadata(t *testing.T) {
 	}
 }
 
-func TestNetConnectM3ToM1Resource_Create_InvalidPlan(t *testing.T) {
+func Test_netConnectM3ToM1Resource_Create_InvalidPlan(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -189,8 +186,8 @@ func TestNetConnectM3ToM1Resource_Create_InvalidPlan(t *testing.T) {
 		{
 			name: "GIVEN invalid plan WHEN Create SHOULD return diagnostics error",
 			plan: tfsdk.Plan{
-				Schema: m3ToM1Schema(t),
-				Raw:    tftypes.NewValue(m3ToM1Schema(t).Type().TerraformType(ctx), tftypes.UnknownValue),
+				Schema: m3ToM1ResourceSchema(t),
+				Raw:    tftypes.NewValue(m3ToM1ResourceSchema(t).Type().TerraformType(ctx), tftypes.UnknownValue),
 			},
 			expected: "Value Conversion Error",
 		},
@@ -199,7 +196,7 @@ func TestNetConnectM3ToM1Resource_Create_InvalidPlan(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &netConnectM3ToM1Resource{
-				m3VpcepEndpointManager: &mockM3ToM1VpcepEndpointManager{},
+				m3VpcepEndpointManager: &mockVpcepEndpointManager{},
 				m3DnsManager:           &mockM3ToM1DnsManager{},
 				m3SniProxyManager:      &mockM3ToM1SniProxyManager{},
 			}
@@ -238,29 +235,29 @@ type wantCalls struct {
 	dnsDeleteCalls   int
 }
 
-func TestNetConnectM3ToM1Resource_Create_Success(t *testing.T) {
+func Test_netConnectM3ToM1Resource_Create_Success(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name      string
-		plan      netConnectM3ToM1ResourceModel
-		sniMock   *mockM3ToM1SniProxyManager
-		vpcepMock *mockM3ToM1VpcepEndpointManager
-		dnsMock   *mockM3ToM1DnsManager
+		name string
+		plan netConnectM3ToM1ResourceModel
+		*mockM3ToM1SniProxyManager
+		*mockVpcepEndpointManager
+		*mockM3ToM1DnsManager
 		wantState wantState
 		wantCalls wantCalls
 	}{
 		{
 			name: "GIVEN valid plan with domain WHEN Create SHOULD create all resources and set state",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createEndpointId: testVpcepEndpointId,
-				createIp:         testVpcepEndpointIp,
+				createEndpointIp: testVpcepEndpointIp,
 			},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				createPrivateZoneId: testDnsID,
 				createRecordSetId:   testLbmDnsRecordId,
 			},
@@ -280,18 +277,18 @@ func TestNetConnectM3ToM1Resource_Create_Success(t *testing.T) {
 		{
 			name: "GIVEN plan without domain name WHEN Create SHOULD skip DNS creation",
 			plan: func() netConnectM3ToM1ResourceModel {
-				plan := newTestPlan()
+				plan := newM3ToM1ResourceModel()
 				plan.M3DnsDomainName = types.StringNull()
 				return plan
 			}(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createEndpointId: testVpcepEndpointId,
-				createIp:         testVpcepEndpointIp,
+				createEndpointIp: testVpcepEndpointIp,
 			},
-			dnsMock: &mockM3ToM1DnsManager{},
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
 			wantState: wantState{
 				sniProxyResourceId: testSniProxyID,
 				m3VpcEndpointId:    testVpcepEndpointId,
@@ -307,18 +304,18 @@ func TestNetConnectM3ToM1Resource_Create_Success(t *testing.T) {
 		{
 			name: "GIVEN empty domain name WHEN Create SHOULD skip DNS creation",
 			plan: func() netConnectM3ToM1ResourceModel {
-				plan := newTestPlan()
+				plan := newM3ToM1ResourceModel()
 				plan.M3DnsDomainName = types.StringValue("")
 				return plan
 			}(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createEndpointId: testVpcepEndpointId,
-				createIp:         testVpcepEndpointIp,
+				createEndpointIp: testVpcepEndpointIp,
 			},
-			dnsMock: &mockM3ToM1DnsManager{},
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
 			wantState: wantState{
 				sniProxyResourceId: testSniProxyID,
 				m3VpcEndpointId:    testVpcepEndpointId,
@@ -336,13 +333,13 @@ func TestNetConnectM3ToM1Resource_Create_Success(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &netConnectM3ToM1Resource{
-				m3VpcepEndpointManager: tc.vpcepMock,
-				m3DnsManager:           tc.dnsMock,
-				m3SniProxyManager:      tc.sniMock,
+				m3VpcepEndpointManager: tc.mockVpcepEndpointManager,
+				m3DnsManager:           tc.mockM3ToM1DnsManager,
+				m3SniProxyManager:      tc.mockM3ToM1SniProxyManager,
 			}
 
-			req := resource.CreateRequest{Plan: newM3ToM1Plan(t, tc.plan)}
-			resp := &resource.CreateResponse{State: newM3ToM1State(t)}
+			req := resource.CreateRequest{Plan: newM3ToM1ResourcePlan(t, tc.plan)}
+			resp := &resource.CreateResponse{State: newM3ToM1ResourceState(t)}
 
 			r.Create(ctx, req, resp)
 
@@ -360,74 +357,74 @@ func TestNetConnectM3ToM1Resource_Create_Success(t *testing.T) {
 				assert.True(t, state.M3DnsPrivateZoneId.IsUnknown() || state.M3DnsPrivateZoneId.IsNull())
 			}
 
-			assert.Equal(t, tc.wantCalls.sniAccessCalls, len(tc.sniMock.accessInputs))
-			assert.Equal(t, tc.wantCalls.vpcepCreateCalls, len(tc.vpcepMock.createInputs))
-			assert.Equal(t, tc.wantCalls.dnsZoneCalls, len(tc.dnsMock.zoneInputs))
-			assert.Equal(t, tc.wantCalls.dnsRecordCalls, len(tc.dnsMock.recordInputs))
+			assert.Equal(t, tc.wantCalls.sniAccessCalls, len(tc.mockM3ToM1SniProxyManager.accessInputs))
+			assert.Equal(t, tc.wantCalls.vpcepCreateCalls, len(tc.mockVpcepEndpointManager.createInputs))
+			assert.Equal(t, tc.wantCalls.dnsZoneCalls, len(tc.mockM3ToM1DnsManager.zoneInputs))
+			assert.Equal(t, tc.wantCalls.dnsRecordCalls, len(tc.mockM3ToM1DnsManager.recordInputs))
 		})
 	}
 }
 
-func TestNetConnectM3ToM1Resource_Create_Failure_And_Rollback(t *testing.T) {
+func Test_netConnectM3ToM1Resource_Create_Failure_And_Rollback(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name                string
-		plan                netConnectM3ToM1ResourceModel
-		sniMock             *mockM3ToM1SniProxyManager
-		vpcepMock           *mockM3ToM1VpcepEndpointManager
-		dnsMock             *mockM3ToM1DnsManager
+		name string
+		plan netConnectM3ToM1ResourceModel
+		*mockM3ToM1SniProxyManager
+		*mockVpcepEndpointManager
+		*mockM3ToM1DnsManager
 		expectedErrContains string
 		expectWarning       bool
 	}{
 		{
 			name: "GIVEN sni proxy creation fails WHEN Create SHOULD return error without creating other resources",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessErr: errors.New("sni proxy access failed"),
 			},
-			vpcepMock:           &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrContains: "create sni-proxy failed",
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:     &mockM3ToM1DnsManager{},
+			expectedErrContains:      "create sni-proxy failed",
 		},
 		{
 			name: "GIVEN vpcep endpoint creation fails WHEN Create SHOULD rollback sni proxy",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createErr: errors.New("vpcep endpoint creation failed"),
 			},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrContains: "create vpc-endpoint failed",
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
+			expectedErrContains:  "create vpc-endpoint failed",
 		},
 		{
 			name: "GIVEN dns private zone creation fails WHEN Create SHOULD rollback vpcep and sni proxy",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createEndpointId: testVpcepEndpointId,
-				createIp:         testVpcepEndpointIp,
+				createEndpointIp: testVpcepEndpointIp,
 			},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				createZoneErr: errors.New("dns private zone creation failed"),
 			},
 			expectedErrContains: "create M3 intranet domain failed",
 		},
 		{
 			name: "GIVEN dns record set creation fails WHEN Create SHOULD rollback all created resources",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createEndpointId: testVpcepEndpointId,
-				createIp:         testVpcepEndpointIp,
+				createEndpointIp: testVpcepEndpointIp,
 			},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				createPrivateZoneId: testDnsID,
 				createRecordErr:     errors.New("dns record set creation failed"),
 			},
@@ -435,30 +432,30 @@ func TestNetConnectM3ToM1Resource_Create_Failure_And_Rollback(t *testing.T) {
 		},
 		{
 			name: "GIVEN vpcep creation fails and rollback also fails WHEN Create SHOULD return warning about rollback failure",
-			plan: newTestPlan(),
-			sniMock: &mockM3ToM1SniProxyManager{
+			plan: newM3ToM1ResourceModel(),
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				accessResourceId: testSniProxyID,
 				deleteErr:        errors.New("sni rollback failed"),
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				createErr: errors.New("vpcep creation failed"),
 			},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrContains: "create vpc-endpoint failed",
-			expectWarning:       true,
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
+			expectedErrContains:  "create vpc-endpoint failed",
+			expectWarning:        true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &netConnectM3ToM1Resource{
-				m3VpcepEndpointManager: tc.vpcepMock,
-				m3DnsManager:           tc.dnsMock,
-				m3SniProxyManager:      tc.sniMock,
+				m3VpcepEndpointManager: tc.mockVpcepEndpointManager,
+				m3DnsManager:           tc.mockM3ToM1DnsManager,
+				m3SniProxyManager:      tc.mockM3ToM1SniProxyManager,
 			}
 
-			req := resource.CreateRequest{Plan: newM3ToM1Plan(t, tc.plan)}
-			resp := &resource.CreateResponse{State: newM3ToM1State(t)}
+			req := resource.CreateRequest{Plan: newM3ToM1ResourcePlan(t, tc.plan)}
+			resp := &resource.CreateResponse{State: newM3ToM1ResourceState(t)}
 
 			r.Create(ctx, req, resp)
 
@@ -482,21 +479,21 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name                string
-		created             []m3ToM1CreatedChildResource
-		sniMock             *mockM3ToM1SniProxyManager
-		vpcepMock           *mockM3ToM1VpcepEndpointManager
-		dnsMock             *mockM3ToM1DnsManager
+		name    string
+		created []m3ToM1CreatedChildResource
+		*mockM3ToM1SniProxyManager
+		*mockVpcepEndpointManager
+		*mockM3ToM1DnsManager
 		expectedErrCount    int
 		expectedErrContains string
 	}{
 		{
-			name:             "GIVEN empty created list WHEN rollback SHOULD return no errors",
-			created:          []m3ToM1CreatedChildResource{},
-			sniMock:          &mockM3ToM1SniProxyManager{},
-			vpcepMock:        &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:          &mockM3ToM1DnsManager{},
-			expectedErrCount: 0,
+			name:                      "GIVEN empty created list WHEN rollback SHOULD return no errors",
+			created:                   []m3ToM1CreatedChildResource{},
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager:  &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:      &mockM3ToM1DnsManager{},
+			expectedErrCount:          0,
 		},
 		{
 			name: "GIVEN all delete success WHEN rollback SHOULD return no errors",
@@ -505,19 +502,19 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 				{Type: vpcepEndpointType, ID: testVpcepID},
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock:          &mockM3ToM1SniProxyManager{},
-			vpcepMock:        &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:          &mockM3ToM1DnsManager{},
-			expectedErrCount: 0,
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager:  &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:      &mockM3ToM1DnsManager{},
+			expectedErrCount:          0,
 		},
 		{
 			name: "GIVEN dns delete fails WHEN rollback SHOULD return dns error",
 			created: []m3ToM1CreatedChildResource{
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock:   &mockM3ToM1SniProxyManager{},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager:  &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				deletePrivateErr: errors.New("dns delete failed"),
 			},
 			expectedErrCount:    1,
@@ -528,26 +525,26 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 			created: []m3ToM1CreatedChildResource{
 				{Type: vpcepEndpointType, ID: testVpcepID},
 			},
-			sniMock: &mockM3ToM1SniProxyManager{},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				deleteErr: errors.New("vpcep delete failed"),
 			},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrCount:    1,
-			expectedErrContains: "delete " + vpcepEndpointType,
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
+			expectedErrCount:     1,
+			expectedErrContains:  "delete " + vpcepEndpointType,
 		},
 		{
 			name: "GIVEN sni delete fails WHEN rollback SHOULD return sni error",
 			created: []m3ToM1CreatedChildResource{
 				{Type: sniProxyType, ID: testSniProxyID},
 			},
-			sniMock: &mockM3ToM1SniProxyManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				deleteErr: errors.New("sni delete failed"),
 			},
-			vpcepMock:           &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrCount:    1,
-			expectedErrContains: "delete " + sniProxyType,
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:     &mockM3ToM1DnsManager{},
+			expectedErrCount:         1,
+			expectedErrContains:      "delete " + sniProxyType,
 		},
 		{
 			name: "GIVEN vpcep delete fails others succeed WHEN rollback SHOULD return one error and continue deleting",
@@ -556,13 +553,13 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 				{Type: vpcepEndpointType, ID: testVpcepID},
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock: &mockM3ToM1SniProxyManager{},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				deleteErr: errors.New("vpcep delete failed"),
 			},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrCount:    1,
-			expectedErrContains: "delete " + vpcepEndpointType,
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{},
+			expectedErrCount:     1,
+			expectedErrContains:  "delete " + vpcepEndpointType,
 		},
 		{
 			name: "GIVEN dns delete fails others succeed WHEN rollback SHOULD return one error and continue deleting",
@@ -571,9 +568,9 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 				{Type: vpcepEndpointType, ID: testVpcepID},
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock:   &mockM3ToM1SniProxyManager{},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager:  &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				deletePrivateErr: errors.New("dns delete failed"),
 			},
 			expectedErrCount:    1,
@@ -586,13 +583,13 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 				{Type: vpcepEndpointType, ID: testVpcepID},
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock: &mockM3ToM1SniProxyManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				deleteErr: errors.New("sni delete failed"),
 			},
-			vpcepMock:           &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrCount:    1,
-			expectedErrContains: "delete " + sniProxyType,
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:     &mockM3ToM1DnsManager{},
+			expectedErrCount:         1,
+			expectedErrContains:      "delete " + sniProxyType,
 		},
 		{
 			name: "GIVEN all three delete fail WHEN rollback SHOULD return all three errors",
@@ -601,13 +598,13 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 				{Type: vpcepEndpointType, ID: testVpcepID},
 				{Type: dnsPrivateZoneType, ID: testDnsID},
 			},
-			sniMock: &mockM3ToM1SniProxyManager{
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{
 				deleteErr: errors.New("sni failed"),
 			},
-			vpcepMock: &mockM3ToM1VpcepEndpointManager{
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
 				deleteErr: errors.New("vpcep failed"),
 			},
-			dnsMock: &mockM3ToM1DnsManager{
+			mockM3ToM1DnsManager: &mockM3ToM1DnsManager{
 				deletePrivateErr: errors.New("dns failed"),
 			},
 			expectedErrCount: 3,
@@ -617,20 +614,20 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 			created: []m3ToM1CreatedChildResource{
 				{Type: "unknown_type", ID: "unknown-id"},
 			},
-			sniMock:             &mockM3ToM1SniProxyManager{},
-			vpcepMock:           &mockM3ToM1VpcepEndpointManager{},
-			dnsMock:             &mockM3ToM1DnsManager{},
-			expectedErrCount:    1,
-			expectedErrContains: "unknown resource type: unknown_type",
+			mockM3ToM1SniProxyManager: &mockM3ToM1SniProxyManager{},
+			mockVpcepEndpointManager:  &mockVpcepEndpointManager{},
+			mockM3ToM1DnsManager:      &mockM3ToM1DnsManager{},
+			expectedErrCount:          1,
+			expectedErrContains:       "unknown resource type: unknown_type",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &netConnectM3ToM1Resource{
-				m3VpcepEndpointManager: tc.vpcepMock,
-				m3DnsManager:           tc.dnsMock,
-				m3SniProxyManager:      tc.sniMock,
+				m3VpcepEndpointManager: tc.mockVpcepEndpointManager,
+				m3DnsManager:           tc.mockM3ToM1DnsManager,
+				m3SniProxyManager:      tc.mockM3ToM1SniProxyManager,
 			}
 
 			errs := r.rollback(ctx, tc.created)
@@ -648,82 +645,7 @@ func Test_netConnectM3ToM1Resource_rollback(t *testing.T) {
 	}
 }
 
-type mockM3ToM1VpcepEndpointManager struct {
-	createEndpointId string
-	createIp         string
-	createErr        error
-	deleteErr        error
-	createInputs     []manager.VpcEndpointInput
-	deleteIds        []string
-}
-
-func (m *mockM3ToM1VpcepEndpointManager) Create(ctx context.Context, input manager.VpcEndpointInput) (string, string, error) {
-	m.createInputs = append(m.createInputs, input)
-	return m.createEndpointId, m.createIp, m.createErr
-}
-
-func (m *mockM3ToM1VpcepEndpointManager) Delete(ctx context.Context, endpointId string) error {
-	m.deleteIds = append(m.deleteIds, endpointId)
-	return m.deleteErr
-}
-
-func (m *mockM3ToM1VpcepEndpointManager) Get(ctx context.Context, endpointId string) (*manager.VpcepEndpointOutput, error) {
-	return nil, nil
-}
-
-type mockM3ToM1DnsManager struct {
-	createPrivateZoneId string
-	createRecordSetId   string
-	createZoneErr       error
-	createRecordErr     error
-	deletePrivateErr    error
-	zoneInputs          []manager.DnsZoneInput
-	recordInputs        []manager.DnsRecordSetInput
-	deleteZoneIds       []string
-}
-
-func (m *mockM3ToM1DnsManager) CreatePrivateZone(ctx context.Context, input manager.DnsZoneInput) (string, error) {
-	m.zoneInputs = append(m.zoneInputs, input)
-	return m.createPrivateZoneId, m.createZoneErr
-}
-
-func (m *mockM3ToM1DnsManager) CreateRecordSet(ctx context.Context, input manager.DnsRecordSetInput) (string, error) {
-	m.recordInputs = append(m.recordInputs, input)
-	return m.createRecordSetId, m.createRecordErr
-}
-
-func (m *mockM3ToM1DnsManager) DeletePrivateZone(ctx context.Context, zoneId string) error {
-	m.deleteZoneIds = append(m.deleteZoneIds, zoneId)
-	return m.deletePrivateErr
-}
-
-func (m *mockM3ToM1DnsManager) GetPrivateZone(ctx context.Context, zoneId string) (*manager.DnsZoneOutput, error) {
-	return nil, nil
-}
-
-type mockM3ToM1SniProxyManager struct {
-	accessResourceId string
-	accessErr        error
-	deleteErr        error
-	accessInputs     []manager.AccessSniProxyInput
-	deleteIds        []string
-}
-
-func (m *mockM3ToM1SniProxyManager) AccessSniProxy(ctx context.Context, input manager.AccessSniProxyInput) (string, error) {
-	m.accessInputs = append(m.accessInputs, input)
-	return m.accessResourceId, m.accessErr
-}
-
-func (m *mockM3ToM1SniProxyManager) DeleteSniProxy(ctx context.Context, resourceId string) error {
-	m.deleteIds = append(m.deleteIds, resourceId)
-	return m.deleteErr
-}
-
-func (m *mockM3ToM1SniProxyManager) GetSniProxy(ctx context.Context, resourceId string) (*manager.AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
-	return nil, nil, nil
-}
-
-func newTestPlan() netConnectM3ToM1ResourceModel {
+func newM3ToM1ResourceModel() netConnectM3ToM1ResourceModel {
 	return netConnectM3ToM1ResourceModel{
 		M3VpcID:               types.StringValue(testM3VpcId),
 		M3VpcEndpointSubnetId: types.StringValue(testM3SubnetId),

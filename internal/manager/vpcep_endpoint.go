@@ -20,7 +20,7 @@ type VpcepEndpointClient interface {
 	ListEndpointInfoDetails(req *model.ListEndpointInfoDetailsRequest) (*model.ListEndpointInfoDetailsResponse, error)
 }
 
-// VpcepEndpointManager - VPCEP Endpoint service 层
+// VpcepEndpointManager - VPCEP Endpoint manager 层
 type VpcepEndpointManager struct {
 	client          VpcepEndpointClient
 	pollingInterval time.Duration

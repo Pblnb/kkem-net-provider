@@ -18,8 +18,8 @@ const (
 	dnsRecordSetType = "A"
 )
 
-// DnsServiceClient - DNS Service 专用接口，仅暴露 DNS 相关的 SDK 方法。
-type DnsServiceClient interface {
+// DnsManagerClient - DNS 专用接口，仅暴露 DNS 相关的 SDK 方法。
+type DnsManagerClient interface {
 	CreatePrivateZone(req *model.CreatePrivateZoneRequest) (*model.CreatePrivateZoneResponse, error)
 	ShowPrivateZone(req *model.ShowPrivateZoneRequest) (*model.ShowPrivateZoneResponse, error)
 	DeletePrivateZone(req *model.DeletePrivateZoneRequest) (*model.DeletePrivateZoneResponse, error)
@@ -27,16 +27,16 @@ type DnsServiceClient interface {
 	ShowRecordSetWithLine(req *model.ShowRecordSetWithLineRequest) (*model.ShowRecordSetWithLineResponse, error)
 }
 
-// DnsManager - DNS service 层
+// DnsManager - DNS manager 层
 type DnsManager struct {
-	client          DnsServiceClient
+	client          DnsManagerClient
 	pollingInterval time.Duration
 	pollingTimeout  time.Duration
 	retryBaseDelay  time.Duration
 }
 
 // NewDnsManager - 构造函数
-func NewDnsManager(client DnsServiceClient) *DnsManager {
+func NewDnsManager(client DnsManagerClient) *DnsManager {
 	return &DnsManager{
 		client:          client,
 		pollingInterval: pollingInterval,

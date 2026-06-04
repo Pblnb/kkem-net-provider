@@ -14,7 +14,7 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpcep/v1/model"
 )
 
-// VpcepServiceClient - VPCEP Service 专用接口，仅暴露 Service 相关的 SDK 方法。
+// VpcepServiceClient - VPCEP Service 专用接口，仅暴露 VPCEP Service 相关的 SDK 方法。
 type VpcepServiceClient interface {
 	CreateEndpointService(req *model.CreateEndpointServiceRequest) (*model.CreateEndpointServiceResponse, error)
 	DeleteEndpointService(req *model.DeleteEndpointServiceRequest) (*model.DeleteEndpointServiceResponse, error)
@@ -34,7 +34,7 @@ const (
 	vpcepServiceStatusFailed    = "failed"
 )
 
-// VpcepServiceManager - VPCEP Service 资源的 service 层封装。名称中的两个 Service 分别表示 VPCEP Service 资源和 Service 代码分层。
+// VpcepServiceManager - VPCEP Service 资源的 manager 层封装。
 type VpcepServiceManager struct {
 	client          VpcepServiceClient
 	pollingInterval time.Duration

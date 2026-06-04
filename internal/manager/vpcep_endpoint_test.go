@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewVpcepEndpointService(t *testing.T) {
+func TestNewVpcepEndpointManager(t *testing.T) {
 	fake := &mockVpcepEndpointClient{}
 
 	actual := NewVpcepEndpointManager(fake)
@@ -27,7 +27,7 @@ func TestNewVpcepEndpointService(t *testing.T) {
 	assert.Equal(t, retryBaseDelay, actual.retryBaseDelay)
 }
 
-func TestVpcepEndpointService_Create(t *testing.T) {
+func TestVpcepEndpointManager_Create(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
@@ -39,7 +39,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 	}{
 		{
 			name: "GIVEN valid input and accepted endpoint WHEN Create SHOULD return endpoint id and ip",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{
 					{resp: buildCreateEndpointResponse(testVpcepEndpointId, "creating")},
 				},
@@ -53,7 +53,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api fails once then succeeds WHEN Create SHOULD return endpoint id and ip",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{
 					{err: errors.New("create failed")},
 					{resp: buildCreateEndpointResponse(testVpcepEndpointId, "creating")},
@@ -68,7 +68,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil create response WHEN Create SHOULD return error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{{resp: nil}},
 			}),
 			expectedErr:         "createEndpoint response is nil",
@@ -76,7 +76,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create response without id WHEN Create SHOULD return error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{{resp: &model.CreateEndpointResponse{}}},
 			}),
 			expectedErr:         "createEndpoint response has no ID",
@@ -84,7 +84,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create response without status WHEN Create SHOULD return error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{{
 					resp: &model.CreateEndpointResponse{Id: ptr(testVpcepEndpointId)},
 				}},
@@ -103,7 +103,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api keeps failing WHEN Create SHOULD return last create error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{
 					{err: errors.New("create failed")},
 					{err: errors.New("create failed")},
@@ -115,7 +115,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN wait failed WHEN Create SHOULD return wrapped wait error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				createResults: []vpcepEndpointCreateResult{
 					{resp: buildCreateEndpointResponse(testVpcepEndpointId, "creating")},
 				},
@@ -164,7 +164,7 @@ func TestVpcepEndpointService_Create(t *testing.T) {
 	}
 }
 
-func TestVpcepEndpointService_waitForReady(t *testing.T) {
+func TestVpcepEndpointManager_waitForReady(t *testing.T) {
 	testCases := []struct {
 		name        string
 		ctx         context.Context
@@ -174,7 +174,7 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 	}{
 		{
 			name: "GIVEN accepted endpoint status WHEN waitForReady SHOULD return endpoint ip",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{resp: buildListEndpointInfoDetailsResponse("accepted", testVpcepEndpointIp)},
 				},
@@ -183,7 +183,7 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN creating then accepted endpoint status WHEN waitForReady SHOULD return endpoint ip",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{resp: buildListEndpointInfoDetailsResponse("creating", "")},
 					{resp: buildListEndpointInfoDetailsResponse("accepted", testVpcepEndpointIp)},
@@ -194,7 +194,7 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 		{
 			name: "GIVEN canceled context WHEN waitForReady SHOULD return context error",
 			ctx:  canceledContext(),
-			manager: newSlowVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newSlowVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{resp: buildListEndpointInfoDetailsResponse("accepted", testVpcepEndpointIp)},
 				},
@@ -203,14 +203,14 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN timeout WHEN waitForReady SHOULD return timeout error",
-			manager: newTimeoutVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newTimeoutVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{{resp: buildListEndpointInfoDetailsResponse("creating", "")}},
 			}),
 			expectedErr: fmt.Sprintf("timeout waiting for vpcep-endpoint %s to be ready", testVpcepEndpointId),
 		},
 		{
 			name: "GIVEN query errors beyond tolerance WHEN waitForReady SHOULD return query error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -221,14 +221,14 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN response without status WHEN waitForReady SHOULD return error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{{resp: &model.ListEndpointInfoDetailsResponse{}}},
 			}),
 			expectedErr: "vpcep-endpoint response has no status",
 		},
 		{
 			name: "GIVEN accepted endpoint without ip WHEN waitForReady SHOULD return error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{{resp: buildListEndpointInfoDetailsResponse("accepted", "")}},
 			}),
 			expectedErr: fmt.Sprintf("vpcep-endpoint %s is accepted but has no IP", testVpcepEndpointId),
@@ -255,7 +255,7 @@ func TestVpcepEndpointService_waitForReady(t *testing.T) {
 	}
 }
 
-func TestVpcepEndpointService_Delete(t *testing.T) {
+func TestVpcepEndpointManager_Delete(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
@@ -279,7 +279,7 @@ func TestVpcepEndpointService_Delete(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api fails once then succeeds WHEN Delete SHOULD return nil",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				deleteResults: []vpcepEndpointDeleteResult{
 					{err: errors.New("delete failed")},
 					{resp: &model.DeleteEndpointResponse{}},
@@ -298,7 +298,7 @@ func TestVpcepEndpointService_Delete(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api keeps failing WHEN Delete SHOULD return last delete error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				deleteResults: []vpcepEndpointDeleteResult{
 					{err: errors.New("delete failed")},
 					{err: errors.New("delete failed")},
@@ -331,7 +331,7 @@ func TestVpcepEndpointService_Delete(t *testing.T) {
 	}
 }
 
-func TestVpcepEndpointService_Get(t *testing.T) {
+func TestVpcepEndpointManager_Get(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
@@ -367,7 +367,7 @@ func TestVpcepEndpointService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api fails once then succeeds WHEN Get SHOULD return endpoint output",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{err: errors.New("query failed")},
 					{resp: buildListEndpointInfoDetailsResponse("accepted", testVpcepEndpointIp)},
@@ -394,7 +394,7 @@ func TestVpcepEndpointService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api keeps failing WHEN Get SHOULD return last query error",
-			manager: newFastVpcepEndpointService(&mockVpcepEndpointClient{
+			manager: newFastVpcepEndpointManager(&mockVpcepEndpointClient{
 				listResults: []vpcepEndpointListResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -609,7 +609,7 @@ func buildListEndpointInfoDetailsResponse(status, ip string) *model.ListEndpoint
 	return resp
 }
 
-func newFastVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointManager {
+func newFastVpcepEndpointManager(client VpcepEndpointClient) *VpcepEndpointManager {
 	manager := NewVpcepEndpointManager(client)
 	manager.pollingInterval = time.Nanosecond
 	manager.pollingTimeout = time.Second
@@ -617,14 +617,14 @@ func newFastVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointManag
 	return manager
 }
 
-func newTimeoutVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointManager {
+func newTimeoutVpcepEndpointManager(client VpcepEndpointClient) *VpcepEndpointManager {
 	manager := NewVpcepEndpointManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Nanosecond
 	return manager
 }
 
-func newSlowVpcepEndpointService(client VpcepEndpointClient) *VpcepEndpointManager {
+func newSlowVpcepEndpointManager(client VpcepEndpointClient) *VpcepEndpointManager {
 	manager := NewVpcepEndpointManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Hour

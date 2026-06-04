@@ -29,7 +29,7 @@ func TestNewVpcepServiceManager(t *testing.T) {
 	assert.Equal(t, retryBaseDelay, actual.retryBaseDelay)
 }
 
-func TestVpcepService_Create(t *testing.T) {
+func TestVpcepServiceManager_Create(t *testing.T) {
 	testCases := []struct {
 		name                             string
 		ctx                              context.Context
@@ -40,8 +40,8 @@ func TestVpcepService_Create(t *testing.T) {
 		expectedCreateCalls              int
 	}{
 		{
-			name: "GIVEN valid input and ready service WHEN Create SHOULD return manager id",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			name: "GIVEN valid input and ready service WHEN Create SHOULD return vpcep service id",
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{
 					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
 				},
@@ -53,8 +53,8 @@ func TestVpcepService_Create(t *testing.T) {
 			expectedCreateCalls: 1,
 		},
 		{
-			name: "GIVEN request log marshal fails WHEN Create SHOULD continue and return manager id",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			name: "GIVEN request log marshal fails WHEN Create SHOULD continue and return vpcep service id",
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{
 					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
 				},
@@ -67,8 +67,8 @@ func TestVpcepService_Create(t *testing.T) {
 			expectedCreateCalls:              1,
 		},
 		{
-			name: "GIVEN create api fails once then succeeds WHEN Create SHOULD return manager id",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			name: "GIVEN create api fails once then succeeds WHEN Create SHOULD return vpcep service id",
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{
 					{err: errors.New("create failed")},
 					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
@@ -82,7 +82,7 @@ func TestVpcepService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create response without id WHEN Create SHOULD return error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{{resp: &model.CreateEndpointServiceResponse{}}},
 			}),
 			expectedErr:         ptr("createEndpointService response has no ID"),
@@ -99,7 +99,7 @@ func TestVpcepService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api keeps failing WHEN Create SHOULD return wrapped create error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{
 					{err: errors.New("create failed")},
 					{err: errors.New("create failed")},
@@ -111,7 +111,7 @@ func TestVpcepService_Create(t *testing.T) {
 		},
 		{
 			name: "GIVEN wait failed WHEN Create SHOULD return wrapped wait error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				createResults: []vpcepServiceCreateResult{
 					{resp: buildCreateEndpointServiceResponse(testVpcepServiceId, "creating")},
 				},
@@ -176,7 +176,7 @@ func TestVpcepService_Create(t *testing.T) {
 	}
 }
 
-func TestVpcepService_waitForReady(t *testing.T) {
+func TestVpcepServiceManager_waitForReady(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
@@ -186,14 +186,14 @@ func TestVpcepService_waitForReady(t *testing.T) {
 	}{
 		{
 			name: "GIVEN available service status WHEN waitForReady SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
 			expectedListCalls: 1,
 		},
 		{
 			name: "GIVEN creating then available service status WHEN waitForReady SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{
 					{resp: buildListServiceDetailsResponse("creating")},
 					{resp: buildListServiceDetailsResponse("available")},
@@ -203,7 +203,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN unknown then available service status WHEN waitForReady SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{
 					{resp: buildListServiceDetailsResponse("unknown")},
 					{resp: buildListServiceDetailsResponse("available")},
@@ -214,7 +214,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		{
 			name: "GIVEN canceled context WHEN waitForReady SHOULD return context error",
 			ctx:  canceledContext(),
-			manager: newSlowPollingVpcepService(&mockVpcepServiceClient{
+			manager: newSlowPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
 			expectedErr: ptr(fmt.Sprintf("context cancelled while waiting for vpcep-service %s: context canceled",
@@ -223,7 +223,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN timeout WHEN waitForReady SHOULD return timeout error",
-			manager: newTimeoutPollingVpcepService(&mockVpcepServiceClient{
+			manager: newTimeoutPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("creating")}},
 			}),
 			expectedErr: ptr(fmt.Sprintf("timeout waiting for vpcep-service %s to be ready",
@@ -232,7 +232,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN query errors beyond tolerance WHEN waitForReady SHOULD return query error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -244,7 +244,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN response without status WHEN waitForReady SHOULD return error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: &model.ListServiceDetailsResponse{}}},
 			}),
 			expectedErr:       ptr(fmt.Sprintf("vpcep-service %s response has no status", testVpcepServiceId)),
@@ -252,7 +252,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN failed service status WHEN waitForReady SHOULD return error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("failed")}},
 			}),
 			expectedErr:       ptr(fmt.Sprintf("vpcep-service %s status is failed", testVpcepServiceId)),
@@ -284,7 +284,7 @@ func TestVpcepService_waitForReady(t *testing.T) {
 	}
 }
 
-func TestVpcepService_Delete(t *testing.T) {
+func TestVpcepServiceManager_Delete(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
@@ -308,7 +308,7 @@ func TestVpcepService_Delete(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api fails once then succeeds WHEN Delete SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				deleteResults: []vpcepServiceDeleteResult{
 					{err: errors.New("delete failed")},
 					{resp: &model.DeleteEndpointServiceResponse{}},
@@ -327,7 +327,7 @@ func TestVpcepService_Delete(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api keeps failing WHEN Delete SHOULD return delete error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				deleteResults: []vpcepServiceDeleteResult{
 					{err: errors.New("delete failed")},
 					{err: errors.New("delete failed")},
@@ -363,7 +363,7 @@ func TestVpcepService_Delete(t *testing.T) {
 	}
 }
 
-func TestVpcepService_AddPermissions(t *testing.T) {
+func TestVpcepServiceManager_AddPermissions(t *testing.T) {
 	testCases := []struct {
 		name                        string
 		ctx                         context.Context
@@ -382,7 +382,7 @@ func TestVpcepService_AddPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN add api fails once then succeeds WHEN AddPermissions SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				addPermissionsResults: []vpcepServiceAddPermissionsResult{
 					{err: errors.New("add failed")},
 					{resp: &model.BatchAddEndpointServicePermissionsResponse{}},
@@ -401,7 +401,7 @@ func TestVpcepService_AddPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN add api keeps failing WHEN AddPermissions SHOULD return wrapped add error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				addPermissionsResults: []vpcepServiceAddPermissionsResult{
 					{err: errors.New("add failed")},
 					{err: errors.New("add failed")},
@@ -439,7 +439,7 @@ func TestVpcepService_AddPermissions(t *testing.T) {
 	}
 }
 
-func TestVpcepService_ReconcilePermissions(t *testing.T) {
+func TestVpcepServiceManager_ReconcilePermissions(t *testing.T) {
 	testCases := []struct {
 		name                           string
 		ctx                            context.Context
@@ -485,7 +485,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN permission query api fails once then succeeds WHEN ReconcilePermissions SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{err: errors.New("api failed")},
 					{resp: buildPermissionsResponse([]model.PermissionObject{
@@ -498,7 +498,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN add permission api fails once then succeeds WHEN ReconcilePermissions SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{})},
 				},
@@ -513,7 +513,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN remove api fails once then succeeds WHEN ReconcilePermissions SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServiceExtraPermission)},
@@ -570,7 +570,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN permission query api keeps failing WHEN ReconcilePermissions SHOULD return query error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{err: errors.New("api failed")},
 					{err: errors.New("api failed")},
@@ -583,7 +583,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN add permission api keeps failing WHEN ReconcilePermissions SHOULD return add error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{})},
 				},
@@ -614,7 +614,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN remove api keeps failing WHEN ReconcilePermissions SHOULD return remove error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{resp: buildPermissionsResponse([]model.PermissionObject{
 						{Id: ptr(testVpcepServicePermissionId), Permission: ptr(testVpcepServiceExtraPermission)},
@@ -667,7 +667,7 @@ func TestVpcepService_ReconcilePermissions(t *testing.T) {
 	}
 }
 
-func TestVpcepService_GetPermissions(t *testing.T) {
+func TestVpcepServiceManager_GetPermissions(t *testing.T) {
 	testCases := []struct {
 		name                         string
 		ctx                          context.Context
@@ -707,7 +707,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN permission query api fails once then succeeds WHEN GetPermissions SHOULD return permission id map",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{err: errors.New("query failed")},
 					{resp: buildPermissionsResponse([]model.PermissionObject{
@@ -751,7 +751,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 		},
 		{
 			name: "GIVEN permission query api keeps failing WHEN GetPermissions SHOULD return query error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listPermissionsResults: []vpcepServiceListPermissionsResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -789,7 +789,7 @@ func TestVpcepService_GetPermissions(t *testing.T) {
 	}
 }
 
-func TestVpcepService_UpdateConfig(t *testing.T) {
+func TestVpcepServiceManager_UpdateConfig(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
@@ -802,7 +802,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 	}{
 		{
 			name: "GIVEN valid config and ready service WHEN UpdateConfig SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{resp: &model.UpdateEndpointServiceResponse{}}},
 				listResults:   []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
@@ -813,7 +813,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN config without ports WHEN UpdateConfig SHOULD send empty ports",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{resp: &model.UpdateEndpointServiceResponse{}}},
 				listResults:   []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
@@ -832,7 +832,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN config with nil ports WHEN UpdateConfig SHOULD send empty ports",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{resp: &model.UpdateEndpointServiceResponse{}}},
 				listResults:   []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
@@ -851,7 +851,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN config with empty port id WHEN UpdateConfig SHOULD send empty port id",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{resp: &model.UpdateEndpointServiceResponse{}}},
 				listResults:   []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
@@ -870,7 +870,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN update api fails once then succeeds WHEN UpdateConfig SHOULD return nil",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{
 					{err: errors.New("update failed")},
 					{resp: &model.UpdateEndpointServiceResponse{}},
@@ -895,7 +895,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN update api keeps failing WHEN UpdateConfig SHOULD return update error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{
 					{err: errors.New("update failed")},
 					{err: errors.New("update failed")},
@@ -909,7 +909,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 		},
 		{
 			name: "GIVEN wait failed WHEN UpdateConfig SHOULD return wrapped wait error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				updateResults: []vpcepServiceUpdateResult{{resp: &model.UpdateEndpointServiceResponse{}}},
 				listResults:   []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("failed")}},
 			}),
@@ -947,7 +947,7 @@ func TestVpcepService_UpdateConfig(t *testing.T) {
 	}
 }
 
-func TestVpcepService_Get(t *testing.T) {
+func TestVpcepServiceManager_Get(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
@@ -957,7 +957,7 @@ func TestVpcepService_Get(t *testing.T) {
 		expectedListCalls int
 	}{
 		{
-			name: "GIVEN service detail response WHEN Get SHOULD return manager output",
+			name: "GIVEN service detail response WHEN Get SHOULD return vpcep service output",
 			manager: NewVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: buildListServiceDetailsResponse("available")}},
 			}),
@@ -975,8 +975,8 @@ func TestVpcepService_Get(t *testing.T) {
 			expectedListCalls: 1,
 		},
 		{
-			name: "GIVEN query api fails once then succeeds WHEN Get SHOULD return manager output",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			name: "GIVEN query api fails once then succeeds WHEN Get SHOULD return vpcep service output",
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{
 					{err: errors.New("query failed")},
 					{resp: buildListServiceDetailsResponse("available")},
@@ -996,7 +996,7 @@ func TestVpcepService_Get(t *testing.T) {
 			expectedListCalls: 2,
 		},
 		{
-			name: "GIVEN service detail response with nil fields WHEN Get SHOULD return manager id only",
+			name: "GIVEN service detail response with nil fields WHEN Get SHOULD return vpcep service id only",
 			manager: NewVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{{resp: &model.ListServiceDetailsResponse{}}},
 			}),
@@ -1038,7 +1038,7 @@ func TestVpcepService_Get(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api keeps failing WHEN Get SHOULD return query error",
-			manager: newFastPollingVpcepService(&mockVpcepServiceClient{
+			manager: newFastPollingVpcepServiceManager(&mockVpcepServiceClient{
 				listResults: []vpcepServiceListResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -1365,7 +1365,7 @@ func buildPermissionsResponse(permissions []model.PermissionObject) *model.ListS
 	return &model.ListServicePermissionsDetailsResponse{Permissions: &permissions}
 }
 
-func newFastPollingVpcepService(client VpcepServiceClient) *VpcepServiceManager {
+func newFastPollingVpcepServiceManager(client VpcepServiceClient) *VpcepServiceManager {
 	manager := NewVpcepServiceManager(client)
 	manager.pollingInterval = time.Nanosecond
 	manager.pollingTimeout = time.Second
@@ -1373,14 +1373,14 @@ func newFastPollingVpcepService(client VpcepServiceClient) *VpcepServiceManager 
 	return manager
 }
 
-func newTimeoutPollingVpcepService(client VpcepServiceClient) *VpcepServiceManager {
+func newTimeoutPollingVpcepServiceManager(client VpcepServiceClient) *VpcepServiceManager {
 	manager := NewVpcepServiceManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Nanosecond
 	return manager
 }
 
-func newSlowPollingVpcepService(client VpcepServiceClient) *VpcepServiceManager {
+func newSlowPollingVpcepServiceManager(client VpcepServiceClient) *VpcepServiceManager {
 	manager := NewVpcepServiceManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Hour

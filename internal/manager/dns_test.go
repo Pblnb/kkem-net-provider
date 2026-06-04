@@ -157,7 +157,7 @@ func (f *mockDnsClient) ShowRecordSetWithLine(req *model.ShowRecordSetWithLineRe
 	return result.resp, result.err
 }
 
-func TestNewDnsService(t *testing.T) {
+func TestNewDnsManager(t *testing.T) {
 	fake := &mockDnsClient{}
 
 	actual := NewDnsManager(fake)
@@ -169,7 +169,7 @@ func TestNewDnsService(t *testing.T) {
 	assert.Equal(t, retryBaseDelay, actual.retryBaseDelay)
 }
 
-func TestDnsService_CreatePrivateZone(t *testing.T) {
+func TestDnsManager_CreatePrivateZone(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
@@ -180,7 +180,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 	}{
 		{
 			name: "GIVEN valid input WHEN CreatePrivateZone SHOULD return zone id",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{
 					{resp: &model.CreatePrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("PENDING_CREATE")}},
 				},
@@ -193,7 +193,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api fails twice then succeeds WHEN CreatePrivateZone SHOULD return zone id",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{
 					{err: errors.New("create failed")},
 					{err: errors.New("create failed")},
@@ -208,7 +208,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN create response without id WHEN CreatePrivateZone SHOULD return error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{{resp: &model.CreatePrivateZoneResponse{}}},
 			}),
 			expectedErr:         "createPrivateZone response has no ID",
@@ -216,7 +216,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN nil create response WHEN CreatePrivateZone SHOULD return error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{{resp: nil}},
 			}),
 			expectedErr:         "createPrivateZone returned nil response",
@@ -224,7 +224,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api keeps failing WHEN CreatePrivateZone SHOULD return last create error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{
 					{err: errors.New("create failed")},
 					{err: errors.New("create failed")},
@@ -246,7 +246,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		{
 			name: "GIVEN canceled context WHEN CreatePrivateZone waitForReady SHOULD return context error",
 			ctx:  canceledContext(),
-			manager: newSlowPollingDnsService(&mockDnsClient{
+			manager: newSlowPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{
 					{resp: &model.CreatePrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("PENDING_CREATE")}},
 				},
@@ -256,7 +256,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN wait failed WHEN CreatePrivateZone SHOULD return wrapped wait error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createZoneResults: []dnsCreateZoneResult{
 					{resp: &model.CreatePrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("PENDING_CREATE")}},
 				},
@@ -306,7 +306,7 @@ func TestDnsService_CreatePrivateZone(t *testing.T) {
 	}
 }
 
-func TestDnsService_waitForZoneReady(t *testing.T) {
+func TestDnsManager_waitForZoneReady(t *testing.T) {
 	testCases := []struct {
 		name        string
 		ctx         context.Context
@@ -315,7 +315,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 	}{
 		{
 			name: "GIVEN active zone status WHEN waitForZoneReady SHOULD return nil",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
 				},
@@ -323,7 +323,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN pending then active zone status WHEN waitForZoneReady SHOULD return nil",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("PENDING_CREATE")}},
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
@@ -333,7 +333,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		{
 			name: "GIVEN canceled context WHEN waitForZoneReady SHOULD return context error",
 			ctx:  canceledContext(),
-			manager: newSlowPollingDnsService(&mockDnsClient{
+			manager: newSlowPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
 				},
@@ -342,7 +342,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN timeout WHEN waitForZoneReady SHOULD return timeout error",
-			manager: newTimeoutPollingDnsService(&mockDnsClient{
+			manager: newTimeoutPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{{resp: &model.ShowPrivateZoneResponse{
 					Id: ptr(testZoneId), Status: ptr("PENDING_CREATE"),
 				}}},
@@ -351,7 +351,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN query errors beyond tolerance WHEN waitForZoneReady SHOULD return query error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -362,14 +362,14 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN response without status WHEN waitForZoneReady SHOULD return error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId)}}},
 			}),
 			expectedErr: "private zone response has no status",
 		},
 		{
 			name: "GIVEN error zone status WHEN waitForZoneReady SHOULD return error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{{resp: &model.ShowPrivateZoneResponse{
 					Id: ptr(testZoneId), Status: ptr("ERROR"),
 				}}},
@@ -378,7 +378,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN pending_disable zone status WHEN waitForZoneReady SHOULD return error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{{resp: &model.ShowPrivateZoneResponse{
 					Id: ptr(testZoneId), Status: ptr("PENDING_DISABLE"),
 				}}},
@@ -387,7 +387,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN pending_delete status WHEN waitForZoneReady SHOULD continue polling",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("PENDING_DELETE")}},
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
@@ -396,7 +396,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 		},
 		{
 			name: "GIVEN unknown status THEN active WHEN waitForZoneReady SHOULD continue polling then succeed",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("UNKNOWN")}},
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
@@ -423,7 +423,7 @@ func TestDnsService_waitForZoneReady(t *testing.T) {
 	}
 }
 
-func TestDnsService_CreateRecordSet(t *testing.T) {
+func TestDnsManager_CreateRecordSet(t *testing.T) {
 	records := []string{"10.0.0.1", "10.0.0.2"}
 
 	testCases := []struct {
@@ -446,7 +446,7 @@ func TestDnsService_CreateRecordSet(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api fails once then succeeds WHEN CreateRecordSet SHOULD return record set id",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createRecordSetResults: []dnsCreateRecordSetResult{
 					{err: errors.New("create failed")},
 					{resp: &model.CreateRecordSetWithLineResponse{Id: ptr(testDnsRecordId)}},
@@ -473,7 +473,7 @@ func TestDnsService_CreateRecordSet(t *testing.T) {
 		},
 		{
 			name: "GIVEN create api keeps failing WHEN CreateRecordSet SHOULD return last create error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				createRecordSetResults: []dnsCreateRecordSetResult{
 					{err: errors.New("create failed")},
 					{err: errors.New("create failed")},
@@ -533,7 +533,7 @@ func TestDnsService_CreateRecordSet(t *testing.T) {
 	}
 }
 
-func TestDnsService_DeletePrivateZone(t *testing.T) {
+func TestDnsManager_DeletePrivateZone(t *testing.T) {
 	testCases := []struct {
 		name                string
 		ctx                 context.Context
@@ -564,7 +564,7 @@ func TestDnsService_DeletePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api fails once then succeeds WHEN DeletePrivateZone SHOULD return nil",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				deleteZoneResults: []dnsDeleteZoneResult{
 					{err: errors.New("delete failed")},
 					{resp: &model.DeletePrivateZoneResponse{}},
@@ -583,7 +583,7 @@ func TestDnsService_DeletePrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN delete api keeps failing WHEN DeletePrivateZone SHOULD return last delete error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				deleteZoneResults: []dnsDeleteZoneResult{
 					{err: errors.New("delete failed")},
 					{err: errors.New("delete failed")},
@@ -616,7 +616,7 @@ func TestDnsService_DeletePrivateZone(t *testing.T) {
 	}
 }
 
-func TestDnsService_GetPrivateZone(t *testing.T) {
+func TestDnsManager_GetPrivateZone(t *testing.T) {
 	testCases := []struct {
 		name              string
 		ctx               context.Context
@@ -677,7 +677,7 @@ func TestDnsService_GetPrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api fails once then succeeds WHEN GetPrivateZone SHOULD return zone output",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{err: errors.New("query failed")},
 					{resp: &model.ShowPrivateZoneResponse{Id: ptr(testZoneId), Status: ptr("ACTIVE")}},
@@ -700,7 +700,7 @@ func TestDnsService_GetPrivateZone(t *testing.T) {
 		},
 		{
 			name: "GIVEN query api keeps failing WHEN GetPrivateZone SHOULD return last query error",
-			manager: newFastPollingDnsService(&mockDnsClient{
+			manager: newFastPollingDnsManager(&mockDnsClient{
 				showZoneResults: []dnsShowZoneResult{
 					{err: errors.New("query failed")},
 					{err: errors.New("query failed")},
@@ -735,7 +735,7 @@ func TestDnsService_GetPrivateZone(t *testing.T) {
 	}
 }
 
-func newFastPollingDnsService(client DnsServiceClient) *DnsManager {
+func newFastPollingDnsManager(client DnsManagerClient) *DnsManager {
 	manager := NewDnsManager(client)
 	manager.pollingInterval = time.Nanosecond
 	manager.pollingTimeout = time.Second
@@ -743,14 +743,14 @@ func newFastPollingDnsService(client DnsServiceClient) *DnsManager {
 	return manager
 }
 
-func newTimeoutPollingDnsService(client DnsServiceClient) *DnsManager {
+func newTimeoutPollingDnsManager(client DnsManagerClient) *DnsManager {
 	manager := NewDnsManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Nanosecond
 	return manager
 }
 
-func newSlowPollingDnsService(client DnsServiceClient) *DnsManager {
+func newSlowPollingDnsManager(client DnsManagerClient) *DnsManager {
 	manager := NewDnsManager(client)
 	manager.pollingInterval = time.Hour
 	manager.pollingTimeout = time.Hour

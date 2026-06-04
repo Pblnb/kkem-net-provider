@@ -20,7 +20,7 @@ const (
 	sniAccessObject = "APIGW"
 )
 
-// SniProxyManager - SNI Proxy service 层
+// SniProxyManager - SNI Proxy manager 层
 type SniProxyManager struct {
 	client          sniproxyclient.SniProxyClient
 	pollingInterval time.Duration
@@ -115,7 +115,7 @@ func (s *SniProxyManager) waitForSniProxyAccessReady(ctx context.Context, resour
 		return result, nil
 	}
 
-	// Use service fields to support dependency injection for faster testing
+	// Use manager fields to support dependency injection for faster testing
 	timer := time.NewTimer(s.pollingTimeout)
 	defer timer.Stop()
 	ticker := time.NewTicker(s.pollingInterval)

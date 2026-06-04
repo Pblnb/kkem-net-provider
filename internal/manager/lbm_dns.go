@@ -16,7 +16,7 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/client/lbmdnsclient"
 )
 
-// LbmDnsManager - LBM-DNS service 层
+// LbmDnsManager - LBM-DNS manager 层
 type LbmDnsManager struct {
 	client          lbmdnsclient.LbmDnsClient
 	pollingInterval time.Duration
