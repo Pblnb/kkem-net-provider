@@ -33,9 +33,9 @@ const (
 	testVpcepEndpointId    = "endpoint-1"
 	testVpcepEndpointIp    = "10.0.0.8"
 	testLbmDnsRecordId     = "dns-record-1"
-	testSniProxyID         = "sni-1"
-	testVpcepID            = "vpcep-1"
-	testDnsID              = "dns-1"
+	testSniProxyId         = "sni-1"
+	testVpcepId            = "vpcep-1"
+	testDnsId              = "dns-1"
 	testIamDomainId        = "domain-id-1"
 	testAnotherIamDomainId = "domain-id-2"
 	testPermissionId       = "permission-1"
@@ -181,6 +181,8 @@ func (m *mockVpcepEndpointManager) Get(_ context.Context, endpointId string) (*m
 type mockLbmDnsManager struct {
 	// 错误注入
 	createErr    error
+	deleteErr    error
+	updateErr    error
 	getDetailErr error
 
 	// 返回数据
@@ -188,30 +190,36 @@ type mockLbmDnsManager struct {
 	getDetailOutput *manager.LbmDnsDetailOutput
 
 	// 调用记录
-	getDetailId    string
-	getDetailCalls int
-	createInputs   []manager.CreateLbmDnsInput
+	getDetailId       string
+	getDetailCalls    int
+	createInputs      []manager.CreateLbmDnsInput
+	deleteRecordIds   []string
+	updateRecordIds   []string
+	updateEndpointIps []string
 }
 
-func (f *mockLbmDnsManager) CreateIntranetDnsDomain(_ context.Context,
+func (m *mockLbmDnsManager) CreateIntranetDnsDomain(_ context.Context,
 	input manager.CreateLbmDnsInput) (*manager.CreateLbmDnsOutput, error) {
-	f.createInputs = append(f.createInputs, input)
-	return f.createOutput, f.createErr
+	m.createInputs = append(m.createInputs, input)
+	return m.createOutput, m.createErr
 }
 
-func (f *mockLbmDnsManager) DeleteIntranetDnsDomain(_ context.Context, _ string) error {
-	return nil
+func (m *mockLbmDnsManager) DeleteIntranetDnsDomain(_ context.Context, recordId string) error {
+	m.deleteRecordIds = append(m.deleteRecordIds, recordId)
+	return m.deleteErr
 }
 
-func (f *mockLbmDnsManager) UpdateRecordValue(_ context.Context, _ string, _ string) error {
-	return nil
+func (m *mockLbmDnsManager) UpdateRecordValue(_ context.Context, recordId string, endpointIp string) error {
+	m.updateRecordIds = append(m.updateRecordIds, recordId)
+	m.updateEndpointIps = append(m.updateEndpointIps, endpointIp)
+	return m.updateErr
 }
 
-func (f *mockLbmDnsManager) GetLbmDnsDetail(_ context.Context,
+func (m *mockLbmDnsManager) GetLbmDnsDetail(_ context.Context,
 	recordId string) (*manager.LbmDnsDetailOutput, error) {
-	f.getDetailId = recordId
-	f.getDetailCalls++
-	return f.getDetailOutput, f.getDetailErr
+	m.getDetailId = recordId
+	m.getDetailCalls++
+	return m.getDetailOutput, m.getDetailErr
 }
 
 type mockM3ToM1DnsManager struct {

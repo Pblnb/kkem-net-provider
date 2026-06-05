@@ -20,20 +20,20 @@ import (
 )
 
 const (
-	testServiceName      = "test-service"
-	testAccessObject     = "APIGW"
-	testRegionCode       = "region-1"
-	testIamDomainAccount = "account-1"
+	testServiceName        = "test-service"
+	testAccessObject       = "APIGW"
+	testRegionCode         = "region-1"
+	testIamDomainAccount   = "account-1"
+	testSniProxyResourceId = "test-resource-1"
 )
 
 func TestClient_AccessService(t *testing.T) {
 	ctx := context.Background()
-	testResourceID := "test-resource-1"
 
 	successBody, err := json.Marshal(AccessServiceResponseBody{
 		BaseResponse: BaseResponse{Code: 0, Msg: "success"},
 		Data: AccessServiceResponseData{
-			ResourceId:       testResourceID,
+			ResourceId:       testSniProxyResourceId,
 			ServiceName:      testServiceName,
 			AccessObject:     testAccessObject,
 			RegionCode:       testRegionCode,
@@ -146,7 +146,7 @@ func TestClient_AccessService(t *testing.T) {
 				assert.NotNil(t, resp)
 				assert.Equal(t, tc.httpStatusCode, resp.HTTPStatusCode)
 				if tc.httpStatusCode == 200 && resp.Body.Code == 0 {
-					assert.Equal(t, testResourceID, resp.Body.Data.ResourceId)
+					assert.Equal(t, testSniProxyResourceId, resp.Body.Data.ResourceId)
 					assert.Equal(t, testServiceName, resp.Body.Data.ServiceName)
 					assert.Equal(t, testAccessObject, resp.Body.Data.AccessObject)
 				}
@@ -157,7 +157,6 @@ func TestClient_AccessService(t *testing.T) {
 
 func TestClient_DeleteAccessService(t *testing.T) {
 	ctx := context.Background()
-	testResourceID := "test-resource-2"
 
 	successBody, err := json.Marshal(BaseResponse{Code: 0, Msg: "success"})
 	require.NoError(t, err)
@@ -216,7 +215,7 @@ func TestClient_DeleteAccessService(t *testing.T) {
 			} else {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					assert.Equal(t, http.MethodDelete, r.Method)
-					assert.True(t, strings.HasSuffix(r.URL.Path, testResourceID))
+					assert.True(t, strings.HasSuffix(r.URL.Path, testSniProxyResourceId))
 					w.WriteHeader(tc.httpStatusCode)
 					_, err = w.Write(tc.responseBody)
 					assert.NoError(t, err)
@@ -226,7 +225,7 @@ func TestClient_DeleteAccessService(t *testing.T) {
 
 			client := NewSniProxyClient(server.URL, "test-token")
 
-			resp, actualErr := client.DeleteAccessService(ctx, testResourceID)
+			resp, actualErr := client.DeleteAccessService(ctx, testSniProxyResourceId)
 
 			if tc.expectedErrContains != "" {
 				assert.Error(t, actualErr)
@@ -244,12 +243,11 @@ func TestClient_DeleteAccessService(t *testing.T) {
 
 func TestClient_GetAccessService(t *testing.T) {
 	ctx := context.Background()
-	testResourceID := "test-resource-3"
 
 	successBody, err := json.Marshal(GetAccessServiceResponseBody{
 		BaseResponse: BaseResponse{Code: 0, Msg: "success"},
 		Data: AccessServiceResponseData{
-			ResourceId:       testResourceID,
+			ResourceId:       testSniProxyResourceId,
 			ServiceName:      testServiceName,
 			AccessObject:     testAccessObject,
 			RegionCode:       testRegionCode,
@@ -262,7 +260,7 @@ func TestClient_GetAccessService(t *testing.T) {
 	multiEpBody, err := json.Marshal(GetAccessServiceResponseBody{
 		BaseResponse: BaseResponse{Code: 0, Msg: "success"},
 		Data: AccessServiceResponseData{
-			ResourceId:       testResourceID,
+			ResourceId:       testSniProxyResourceId,
 			ServiceName:      testServiceName,
 			AccessObject:     testAccessObject,
 			RegionCode:       testRegionCode,
@@ -278,7 +276,7 @@ func TestClient_GetAccessService(t *testing.T) {
 	emptyEpBody, err := json.Marshal(GetAccessServiceResponseBody{
 		BaseResponse: BaseResponse{Code: 0, Msg: "success"},
 		Data: AccessServiceResponseData{
-			ResourceId:       testResourceID,
+			ResourceId:       testSniProxyResourceId,
 			ServiceName:      testServiceName,
 			AccessObject:     testAccessObject,
 			RegionCode:       testRegionCode,
@@ -307,7 +305,7 @@ func TestClient_GetAccessService(t *testing.T) {
 	}{
 		{
 			name:                 "GIVEN success response WHEN GetAccessService SHOULD return response data",
-			resourceId:           testResourceID,
+			resourceId:           testSniProxyResourceId,
 			httpStatusCode:       200,
 			responseBody:         successBody,
 			expectedDataNotNil:   true,
@@ -317,7 +315,7 @@ func TestClient_GetAccessService(t *testing.T) {
 		},
 		{
 			name:                 "GIVEN success response with multiple ep services WHEN GetAccessService SHOULD return all ep service ids",
-			resourceId:           testResourceID,
+			resourceId:           testSniProxyResourceId,
 			httpStatusCode:       200,
 			responseBody:         multiEpBody,
 			expectedDataNotNil:   true,
@@ -327,7 +325,7 @@ func TestClient_GetAccessService(t *testing.T) {
 		},
 		{
 			name:                 "GIVEN success response with empty ep services WHEN GetAccessService SHOULD return empty slice",
-			resourceId:           testResourceID,
+			resourceId:           testSniProxyResourceId,
 			httpStatusCode:       200,
 			responseBody:         emptyEpBody,
 			expectedDataNotNil:   true,
@@ -337,7 +335,7 @@ func TestClient_GetAccessService(t *testing.T) {
 		},
 		{
 			name:               "GIVEN not exist code WHEN GetAccessService SHOULD return response with error code",
-			resourceId:         testResourceID,
+			resourceId:         testSniProxyResourceId,
 			httpStatusCode:     200,
 			responseBody:       notExistBody,
 			expectedDataNotNil: false,
@@ -345,19 +343,19 @@ func TestClient_GetAccessService(t *testing.T) {
 		},
 		{
 			name:           "GIVEN HTTP error WHEN GetAccessService SHOULD return response with error status",
-			resourceId:     testResourceID,
+			resourceId:     testSniProxyResourceId,
 			httpStatusCode: 404,
 			responseBody:   []byte(`{"code":404,"msg":"not found"}`),
 		},
 		{
 			name:                "GIVEN connection error WHEN GetAccessService SHOULD return error",
-			resourceId:          testResourceID,
+			resourceId:          testSniProxyResourceId,
 			simulateError:       true,
 			expectedErrContains: "do request failed",
 		},
 		{
 			name:                "GIVEN invalid JSON WHEN GetAccessService SHOULD return unmarshal error",
-			resourceId:          testResourceID,
+			resourceId:          testSniProxyResourceId,
 			httpStatusCode:      200,
 			responseBody:        []byte(`invalid json`),
 			expectedErrContains: "unmarshal response failed",
@@ -396,7 +394,7 @@ func TestClient_GetAccessService(t *testing.T) {
 				assert.Equal(t, tc.httpStatusCode, actualResp.HTTPStatusCode)
 				if tc.expectedDataNotNil {
 					assert.Equal(t, tc.expectedCode, actualResp.Body.Code)
-					assert.Equal(t, testResourceID, actualResp.Body.Data.ResourceId)
+					assert.Equal(t, testSniProxyResourceId, actualResp.Body.Data.ResourceId)
 					assert.Equal(t, testServiceName, actualResp.Body.Data.ServiceName)
 				}
 				if tc.expectedEpServiceIds != nil {

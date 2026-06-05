@@ -707,7 +707,12 @@ func (r *netConnectM1ToM3Resource) reconcileM1ToM3Endpoint(ctx context.Context, 
 	}
 	endpointId, endpointIp, err := r.createAndWaitVpcepEndpoint(ctx, plan, plan.VpcepServiceId.ValueString())
 	if err != nil {
-		return err
+		action := "create"
+		if endpointReplace {
+			action = "replace"
+		}
+		return fmt.Errorf("%s vpcep-endpoint for service %s in vpc %s subnet %s failed: %w", action,
+			plan.VpcepServiceId.ValueString(), plan.M1PlusVpcId, plan.M1PlusSubnetId, err)
 	}
 	plan.VpcepEndpointId = types.StringValue(endpointId)
 	plan.VpcepEndpointIp = types.StringValue(endpointIp)
