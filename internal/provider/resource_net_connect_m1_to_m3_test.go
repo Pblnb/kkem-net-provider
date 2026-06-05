@@ -1602,6 +1602,375 @@ func Test_normalizeVpcepServicePermissionBlocks(t *testing.T) {
 	}
 }
 
+func Test_setM1ToM3UpdateState(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		plan                  netConnectM1ToM3ResourceModel
+		setupPatch            func() *gomonkey.Patches
+		expected              netConnectM1ToM3ResourceModel
+		expectedSuccess       bool
+		expectedDiagSummary   string
+		expectedDiagDetailMsg string
+	}{
+		{
+			name: "GIVEN update plan WHEN setM1ToM3UpdateState SHOULD normalize list fields and set state",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcepServicePorts = []vpcepServicePortBlock{
+					{ClientPort: 443, ServerPort: 8443},
+					{ClientPort: 80, ServerPort: 8080},
+				}
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{
+					{Permission: testAnotherIamDomainId},
+					{Permission: testIamDomainId},
+				}
+				return plan
+			}(),
+			expected:        newM1ToM3ResourceModel(),
+			expectedSuccess: true,
+		},
+		{
+			name: "GIVEN state set diagnostics WHEN setM1ToM3UpdateState SHOULD return false",
+			plan: newM1ToM3ResourceModel(),
+			setupPatch: func() *gomonkey.Patches {
+				patches := gomonkey.NewPatches()
+				patches.ApplyMethod(&tfsdk.State{}, "Set", func(_ *tfsdk.State, _ context.Context,
+					_ interface{}) diag.Diagnostics {
+					var diags diag.Diagnostics
+					diags.AddError("set state failed", "mock state set diagnostics")
+					return diags
+				})
+				return patches
+			},
+			expectedDiagSummary:   "set state failed",
+			expectedDiagDetailMsg: "mock state set diagnostics",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupPatch != nil {
+				patches := tc.setupPatch()
+				defer patches.Reset()
+			}
+			plan := tc.plan
+			resp := &resource.UpdateResponse{State: newM1ToM3ResourceState(t)}
+
+			actual := setM1ToM3UpdateState(context.Background(), resp, &plan)
+
+			assert.Equal(t, tc.expectedSuccess, actual)
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailMsg, resp.Diagnostics)
+			if !tc.expectedSuccess {
+				return
+			}
+			var actualState netConnectM1ToM3ResourceModel
+			diags := resp.State.Get(context.Background(), &actualState)
+			assert.Empty(t, diags)
+			assertM1ToM3ResourceState(t, tc.expected, actualState)
+		})
+	}
+}
+
+func Test_netConnectM1ToM3Resource_reconcileM1ToM3VpcepService(t *testing.T) {
+	const changedPermission = "domain-id-3"
+	testCases := []struct {
+		name              string
+		state             netConnectM1ToM3ResourceModel
+		plan              netConnectM1ToM3ResourceModel
+		vpcep             *mockVpcepServiceManager
+		expectedPlan      *netConnectM1ToM3ResourceModel
+		expectedErr       string
+		expectedUpdate    *manager.VpcepServiceInput
+		expectedReconcile []manager.PermissionInput
+		repeatAfterUpdate bool
+	}{
+		{
+			name:         "GIVEN unchanged vpcep-service state WHEN reconcileM1ToM3VpcepService SHOULD keep service unchanged",
+			state:        newM1ToM3ResourceModel(),
+			plan:         newM1ToM3ResourceModel(),
+			vpcep:        &mockVpcepServiceManager{},
+			expectedPlan: ptr(newM1ToM3ResourceModel()),
+		},
+		{
+			name:  "GIVEN vpcep-service config changes WHEN reconcileM1ToM3VpcepService SHOULD update existing service",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				return plan
+			}(),
+			vpcep: &mockVpcepServiceManager{},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+		},
+		{
+			name:  "GIVEN vpcep-service ports change only WHEN reconcileM1ToM3VpcepService SHOULD update ports without reconciling permissions",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcepServicePorts = []vpcepServicePortBlock{{ClientPort: 80, ServerPort: 8081}}
+				return plan
+			}(),
+			vpcep: &mockVpcepServiceManager{},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.Ports = []manager.PortPair{{ClientPort: 80, ServerPort: 8081}}
+				return expected
+			}(),
+		},
+		{
+			name:  "GIVEN vpcep-service permissions change WHEN reconcileM1ToM3VpcepService SHOULD reconcile permissions",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep:             &mockVpcepServiceManager{},
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+		},
+		{
+			name:  "GIVEN updated state after vpcep-service reconcile WHEN reconcileM1ToM3VpcepService SHOULD not update again after successful reconcile",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep: &mockVpcepServiceManager{},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+			repeatAfterUpdate: true,
+		},
+		{
+			name: "GIVEN vpcep-service id missing WHEN reconcileM1ToM3VpcepService SHOULD return replacement required error",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.VpcepServiceId = types.StringNull()
+				return state
+			}(),
+			plan:        newM1ToM3ResourceModel(),
+			vpcep:       &mockVpcepServiceManager{},
+			expectedErr: "vpcep-service is missing; Terraform replacement is required",
+		},
+		{
+			name:  "GIVEN root vpcep-service attribute changes WHEN reconcileM1ToM3VpcepService SHOULD return Terraform replacement error",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcId = "m3-vpc-2"
+				return plan
+			}(),
+			vpcep:       &mockVpcepServiceManager{},
+			expectedErr: "vpcep-service replacement should be handled by Terraform resource replacement",
+		},
+		{
+			name:  "GIVEN vpcep-service update fails WHEN reconcileM1ToM3VpcepService SHOULD return update error",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				return plan
+			}(),
+			vpcep:       &mockVpcepServiceManager{updateErr: errors.New("update service failed")},
+			expectedErr: "update service failed",
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := tc.plan
+			target := newM1ToM3ResourceWithMocks(&mockVpcepEndpointManager{}, tc.vpcep, &mockLbmDnsManager{})
+
+			err := target.reconcileM1ToM3VpcepService(context.Background(), tc.state, &plan)
+
+			if tc.expectedErr == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tc.expectedErr)
+			}
+			if tc.expectedPlan != nil {
+				assertM1ToM3ResourceState(t, *tc.expectedPlan, plan)
+			}
+			if tc.expectedUpdate == nil {
+				assert.Empty(t, tc.vpcep.updateServiceIds)
+				assert.Empty(t, tc.vpcep.updateServiceInputs)
+			} else {
+				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcep.updateServiceIds)
+				assert.Equal(t, []manager.VpcepServiceInput{*tc.expectedUpdate}, tc.vpcep.updateServiceInputs)
+			}
+			if tc.expectedReconcile == nil {
+				assert.Empty(t, tc.vpcep.reconcilePermissionIds)
+				assert.Empty(t, tc.vpcep.reconcilePermissionInputs)
+			} else {
+				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcep.reconcilePermissionIds)
+				assert.Equal(t, [][]manager.PermissionInput{tc.expectedReconcile}, tc.vpcep.reconcilePermissionInputs)
+			}
+
+			if tc.repeatAfterUpdate {
+				secondVpcep := &mockVpcepServiceManager{}
+				target = newM1ToM3ResourceWithMocks(&mockVpcepEndpointManager{}, secondVpcep, &mockLbmDnsManager{})
+				stateAfterReconcile := plan
+				reconcileInput := stateAfterReconcile
+
+				err = target.reconcileM1ToM3VpcepService(context.Background(), stateAfterReconcile, &reconcileInput)
+
+				assert.NoError(t, err)
+				assert.Empty(t, secondVpcep.updateServiceIds)
+				assert.Empty(t, secondVpcep.reconcilePermissionIds)
+			}
+		})
+	}
+}
+
+func Test_netConnectM1ToM3Resource_updateExistingM1ToM3VpcepService(t *testing.T) {
+	const changedPermission = "domain-id-3"
+	testCases := []struct {
+		name              string
+		plan              netConnectM1ToM3ResourceModel
+		vpcep             *mockVpcepServiceManager
+		expectedPlan      *netConnectM1ToM3ResourceModel
+		expectedErr       string
+		expectedUpdate    *manager.VpcepServiceInput
+		expectedReconcile []manager.PermissionInput
+	}{
+		{
+			name:         "GIVEN unchanged vpcep-service state WHEN updateExistingM1ToM3VpcepService SHOULD keep service unchanged",
+			plan:         newM1ToM3ResourceModel(),
+			vpcep:        &mockVpcepServiceManager{},
+			expectedPlan: ptr(newM1ToM3ResourceModel()),
+		},
+		{
+			name: "GIVEN vpcep-service config and permissions changed WHEN updateExistingM1ToM3VpcepService SHOULD update both",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep: &mockVpcepServiceManager{},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+		},
+		{
+			name: "GIVEN only vpcep-service config changed WHEN updateExistingM1ToM3VpcepService SHOULD update config without reconciling permissions",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				return plan
+			}(),
+			vpcep: &mockVpcepServiceManager{},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+		},
+		{
+			name: "GIVEN only vpcep-service permissions changed WHEN updateExistingM1ToM3VpcepService SHOULD reconcile permissions only",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep:             &mockVpcepServiceManager{},
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+		},
+		{
+			name: "GIVEN vpcep-service config update fails WHEN updateExistingM1ToM3VpcepService SHOULD return update error",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep:       &mockVpcepServiceManager{updateErr: errors.New("update service failed")},
+			expectedErr: "update service failed",
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+		},
+		{
+			name: "GIVEN vpcep-service config and permissions changed but permission reconcile fails WHEN updateExistingM1ToM3VpcepService SHOULD return reconcile error after update",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = "port-2"
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep:             &mockVpcepServiceManager{reconcileErr: errors.New("reconcile permissions failed")},
+			expectedErr:       "reconcile permissions failed",
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+			expectedUpdate: func() *manager.VpcepServiceInput {
+				expected := newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = "port-2"
+				return expected
+			}(),
+		},
+		{
+			name: "GIVEN permission reconcile fails WHEN updateExistingM1ToM3VpcepService SHOULD return reconcile error",
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			vpcep:             &mockVpcepServiceManager{reconcileErr: errors.New("reconcile permissions failed")},
+			expectedErr:       "reconcile permissions failed",
+			expectedReconcile: []manager.PermissionInput{{Permission: changedPermission}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := newM1ToM3ResourceWithMocks(&mockVpcepEndpointManager{}, tc.vpcep, &mockLbmDnsManager{})
+
+			err := target.updateExistingM1ToM3VpcepService(context.Background(), newM1ToM3ResourceModel(), &tc.plan)
+
+			if tc.expectedErr == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tc.expectedErr)
+			}
+			if tc.expectedPlan != nil {
+				assertM1ToM3ResourceState(t, *tc.expectedPlan, tc.plan)
+			}
+			if tc.expectedUpdate == nil {
+				assert.Empty(t, tc.vpcep.updateServiceIds)
+				assert.Empty(t, tc.vpcep.updateServiceInputs)
+			} else {
+				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcep.updateServiceIds)
+				assert.Equal(t, []manager.VpcepServiceInput{*tc.expectedUpdate}, tc.vpcep.updateServiceInputs)
+			}
+			if tc.expectedReconcile == nil {
+				assert.Empty(t, tc.vpcep.reconcilePermissionIds)
+				assert.Empty(t, tc.vpcep.reconcilePermissionInputs)
+			} else {
+				assert.Equal(t, []string{testVpcepServiceId}, tc.vpcep.reconcilePermissionIds)
+				assert.Equal(t, [][]manager.PermissionInput{tc.expectedReconcile}, tc.vpcep.reconcilePermissionInputs)
+			}
+		})
+	}
+}
+
 func Test_preserveKnownComputedFields(t *testing.T) {
 	stateValues := mustLbmDnsRecordValues(t, []lbmDnsRecordValueBlock{
 		{RecordType: "A", RecordValue: testVpcepEndpointIp},

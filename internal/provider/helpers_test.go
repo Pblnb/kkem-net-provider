@@ -14,6 +14,11 @@ import (
 	"huawei.com/kkem/kkem-net-provider/internal/manager"
 )
 
+// 通用测试数据/函数
+func ptr[T any](v T) *T {
+	return &v
+}
+
 const (
 	testM3VpcId            = "m3-vpc-1"
 	testM3ServerType       = "LB"
