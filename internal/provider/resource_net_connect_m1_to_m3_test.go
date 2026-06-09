@@ -1673,6 +1673,397 @@ func Test_setM1ToM3UpdateState(t *testing.T) {
 	}
 }
 
+func Test_netConnectM1ToM3Resource_Update(t *testing.T) {
+	newPortId := "port-2"
+	newSubnetId := "subnet-2"
+	newRegionCode := "region-2"
+	newEndpointId := "endpoint-2"
+	newEndpointIp := "10.0.0.9"
+	newDnsRecordId := "dns-record-2"
+	changedPermission := "domain-id-3"
+
+	testCases := []struct {
+		name string
+		// Terraform 请求输入
+		state        netConnectM1ToM3ResourceModel
+		plan         netConnectM1ToM3ResourceModel
+		unknownState bool
+		unknownPlan  bool
+		// Mock manager 配置
+		*mockVpcepEndpointManager
+		*mockVpcepServiceManager
+		*mockLbmDnsManager
+		// 按调用顺序 mock setM1ToM3UpdateState 返回值
+		mockSetStateResults []bool
+		// 期望的错误与警告
+		expectedDiagSummary        string
+		expectedDiagDetailContains string
+		expectedWarningDetails     []string
+		// 期望的最终 Terraform State
+		expectedState *netConnectM1ToM3ResourceModel
+		// 期望的 manager 调用
+		expectedCreateEndpoint    []manager.VpcEndpointInput
+		expectedUpdateService     []manager.VpcepServiceInput
+		expectedReconcile         [][]manager.PermissionInput
+		expectedCreateDns         []manager.CreateLbmDnsInput
+		expectedUpdateRecordIds   []string
+		expectedUpdateIps         []string
+		expectedDeleteEndpointIds []string
+		expectedDeleteDnsIds      []string
+	}{
+		{
+			name:                     "GIVEN unchanged state WHEN Update SHOULD keep state unchanged",
+			state:                    newM1ToM3ResourceModel(),
+			plan:                     newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:  &mockVpcepServiceManager{},
+			mockLbmDnsManager:        &mockLbmDnsManager{},
+			expectedState:            ptr(newM1ToM3ResourceModel()),
+		},
+		{
+			name: "GIVEN endpoint id missing WHEN Update SHOULD repair endpoint",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			plan: newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
+				createEndpointId: testVpcepEndpointId,
+				createEndpointIp: testVpcepEndpointIp,
+			},
+			mockVpcepServiceManager: &mockVpcepServiceManager{},
+			mockLbmDnsManager:       &mockLbmDnsManager{},
+			expectedState:           ptr(newM1ToM3ResourceModel()),
+			expectedCreateEndpoint:  []manager.VpcEndpointInput{*newExpectedM1ToM3EndpointInput()},
+		},
+		{
+			name:  "GIVEN changed vpcep-service config and permissions WHEN Update SHOULD update service and reconcile permissions",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = newPortId
+				plan.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return plan
+			}(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:  &mockVpcepServiceManager{},
+			mockLbmDnsManager:        &mockLbmDnsManager{},
+			expectedState: ptr(func() netConnectM1ToM3ResourceModel {
+				expected := newM1ToM3ResourceModel()
+				expected.M3PortId = newPortId
+				expected.M3VpcepServicePermissions = []vpcepServicePermissionBlock{{Permission: changedPermission}}
+				return expected
+			}()),
+			expectedUpdateService: []manager.VpcepServiceInput{func() manager.VpcepServiceInput {
+				expected := *newExpectedM1ToM3VpcepServiceInput()
+				expected.PortId = newPortId
+				return expected
+			}()},
+			expectedReconcile: [][]manager.PermissionInput{{{Permission: changedPermission}}},
+		},
+		{
+			name:  "GIVEN changed endpoint network WHEN Update SHOULD replace endpoint and update dns before cleaning stale endpoint",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M1PlusSubnetId = newSubnetId
+				return plan
+			}(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
+				createEndpointId: newEndpointId,
+				createEndpointIp: newEndpointIp,
+			},
+			mockVpcepServiceManager: &mockVpcepServiceManager{},
+			mockLbmDnsManager:       &mockLbmDnsManager{},
+			expectedState: ptr(func() netConnectM1ToM3ResourceModel {
+				expected := newM1ToM3ResourceModel()
+				expected.M1PlusSubnetId = newSubnetId
+				expected.VpcepEndpointId = types.StringValue(newEndpointId)
+				expected.VpcepEndpointIp = types.StringValue(newEndpointIp)
+				expected.LbmDnsRecordValues = testLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+					{RecordType: "A", RecordValue: newEndpointIp},
+				})
+				return expected
+			}()),
+			expectedCreateEndpoint: []manager.VpcEndpointInput{func() manager.VpcEndpointInput {
+				expected := *newExpectedM1ToM3EndpointInput()
+				expected.SubnetId = newSubnetId
+				return expected
+			}()},
+			expectedUpdateRecordIds:   []string{testLbmDnsRecordId},
+			expectedUpdateIps:         []string{newEndpointIp},
+			expectedDeleteEndpointIds: []string{testVpcepEndpointId},
+		},
+		{
+			name: "GIVEN dns record id missing WHEN Update SHOULD repair dns record",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.LbmDnsRecordId = types.StringNull()
+				state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+				return state
+			}(),
+			plan:                     newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:  &mockVpcepServiceManager{},
+			mockLbmDnsManager:        &mockLbmDnsManager{createOutput: newCreateLbmDnsOutput()},
+			expectedState: ptr(func() netConnectM1ToM3ResourceModel {
+				expected := newM1ToM3ResourceModel()
+				expected.LbmDnsRecordId = types.StringValue(testLbmDnsRecordId)
+				expected.LbmDnsRecordValues = testLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+					{RecordType: "A", RecordValue: testVpcepEndpointIp},
+				})
+				return expected
+			}()),
+			expectedCreateDns: []manager.CreateLbmDnsInput{*newExpectedM1ToM3LbmDnsInput()},
+		},
+		{
+			name:  "GIVEN changed dns identity WHEN Update SHOULD replace dns record and cleanup stale dns",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.RegionCode = newRegionCode
+				return plan
+			}(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:  &mockVpcepServiceManager{},
+			mockLbmDnsManager:        &mockLbmDnsManager{createOutput: &manager.CreateLbmDnsOutput{RecordId: newDnsRecordId}},
+			expectedState: ptr(func() netConnectM1ToM3ResourceModel {
+				expected := newM1ToM3ResourceModel()
+				expected.RegionCode = newRegionCode
+				expected.LbmDnsRecordId = types.StringValue(newDnsRecordId)
+				return expected
+			}()),
+			expectedCreateDns: []manager.CreateLbmDnsInput{func() manager.CreateLbmDnsInput {
+				expected := *newExpectedM1ToM3LbmDnsInput()
+				expected.RegionCode = newRegionCode
+				return expected
+			}()},
+			expectedDeleteDnsIds: []string{testLbmDnsRecordId},
+		},
+		{
+			name:  "GIVEN stale cleanup fails WHEN Update SHOULD keep state and add warning",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M1PlusSubnetId = newSubnetId
+				return plan
+			}(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
+				createEndpointId: newEndpointId,
+				createEndpointIp: newEndpointIp,
+				deleteErr:        errors.New("delete endpoint failed"),
+			},
+			mockVpcepServiceManager: &mockVpcepServiceManager{},
+			mockLbmDnsManager:       &mockLbmDnsManager{},
+			expectedState: ptr(func() netConnectM1ToM3ResourceModel {
+				expected := newM1ToM3ResourceModel()
+				expected.M1PlusSubnetId = newSubnetId
+				expected.VpcepEndpointId = types.StringValue(newEndpointId)
+				expected.VpcepEndpointIp = types.StringValue(newEndpointIp)
+				expected.LbmDnsRecordValues = testLbmDnsRecordValues([]lbmDnsRecordValueBlock{
+					{RecordType: "A", RecordValue: newEndpointIp},
+				})
+				return expected
+			}()),
+			expectedCreateEndpoint: []manager.VpcEndpointInput{func() manager.VpcEndpointInput {
+				expected := *newExpectedM1ToM3EndpointInput()
+				expected.SubnetId = newSubnetId
+				return expected
+			}()},
+			expectedUpdateRecordIds:   []string{testLbmDnsRecordId},
+			expectedUpdateIps:         []string{newEndpointIp},
+			expectedDeleteEndpointIds: []string{testVpcepEndpointId},
+			expectedWarningDetails: []string{
+				"delete stale vpcep-endpoint",
+				testVpcepEndpointId,
+				"delete endpoint failed",
+			},
+		},
+		{
+			name:                       "GIVEN unknown plan WHEN Update SHOULD return diagnostics",
+			state:                      newM1ToM3ResourceModel(),
+			plan:                       newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			unknownPlan:                true,
+			expectedDiagSummary:        "Value Conversion Error",
+			expectedDiagDetailContains: "Received unknown value",
+		},
+		{
+			name:                       "GIVEN unknown state WHEN Update SHOULD return diagnostics",
+			state:                      newM1ToM3ResourceModel(),
+			plan:                       newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			unknownState:               true,
+			expectedDiagSummary:        "Value Conversion Error",
+			expectedDiagDetailContains: "Received unknown value",
+		},
+		{
+			name: "GIVEN vpcep-service reconcile fails WHEN Update SHOULD return diagnostics",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.VpcepServiceId = types.StringNull()
+				return state
+			}(),
+			plan:                       newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			expectedDiagSummary:        "reconcile vpcep-service failed",
+			expectedDiagDetailContains: "vpcep-service is missing; Terraform replacement is required",
+		},
+		{
+			name:  "GIVEN first state write fails WHEN Update SHOULD return diagnostics",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.M3PortId = newPortId
+				return plan
+			}(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			mockSetStateResults:        []bool{false},
+			expectedDiagSummary:        "mock state write failed",
+			expectedDiagDetailContains: "mock state write diagnostics",
+		},
+		{
+			name: "GIVEN vpcep-endpoint reconcile fails WHEN Update SHOULD return diagnostics",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			plan:                       newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{createErr: errors.New("create endpoint failed")},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			expectedDiagSummary:        "reconcile vpcep-endpoint failed",
+			expectedDiagDetailContains: "create endpoint failed",
+		},
+		{
+			name: "GIVEN second state write fails WHEN Update SHOULD return diagnostics",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.VpcepEndpointId = types.StringNull()
+				return state
+			}(),
+			plan: newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager: &mockVpcepEndpointManager{
+				createEndpointId: testVpcepEndpointId,
+				createEndpointIp: testVpcepEndpointIp,
+			},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{},
+			mockSetStateResults:        []bool{true, false},
+			expectedDiagSummary:        "mock state write failed",
+			expectedDiagDetailContains: "mock state write diagnostics",
+		},
+		{
+			name: "GIVEN lbm-dns reconcile fails WHEN Update SHOULD return diagnostics",
+			state: func() netConnectM1ToM3ResourceModel {
+				state := newM1ToM3ResourceModel()
+				state.LbmDnsRecordId = types.StringNull()
+				state.LbmDnsRecordValues = types.ListNull(lbmDnsRecordValueObjectType)
+				return state
+			}(),
+			plan:                       newM1ToM3ResourceModel(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{createErr: errors.New("create dns failed")},
+			expectedDiagSummary:        "create lbm-dns record failed",
+			expectedDiagDetailContains: "create dns failed",
+		},
+		{
+			name:  "GIVEN third state write fails WHEN Update SHOULD return diagnostics",
+			state: newM1ToM3ResourceModel(),
+			plan: func() netConnectM1ToM3ResourceModel {
+				plan := newM1ToM3ResourceModel()
+				plan.RegionCode = newRegionCode
+				return plan
+			}(),
+			mockVpcepEndpointManager:   &mockVpcepEndpointManager{},
+			mockVpcepServiceManager:    &mockVpcepServiceManager{},
+			mockLbmDnsManager:          &mockLbmDnsManager{createOutput: &manager.CreateLbmDnsOutput{RecordId: newDnsRecordId}},
+			mockSetStateResults:        []bool{true, true, false},
+			expectedDiagSummary:        "mock state write failed",
+			expectedDiagDetailContains: "mock state write diagnostics",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if len(tc.mockSetStateResults) > 0 {
+				// setM1ToM3UpdateState is called after each reconcile phase; patching it lets this table
+				// cover every early-return branch without manufacturing invalid Terraform state values.
+				callIndex := 0
+				patches := gomonkey.ApplyFunc(setM1ToM3UpdateState,
+					func(ctx context.Context, resp *resource.UpdateResponse,
+						plan *netConnectM1ToM3ResourceModel) bool {
+						result := tc.mockSetStateResults[callIndex]
+						callIndex++
+						if !result {
+							resp.Diagnostics.AddError("mock state write failed", "mock state write diagnostics")
+							return false
+						}
+						normalizeM1ToM3ListState(plan)
+						resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
+						return !resp.Diagnostics.HasError()
+					})
+				defer patches.Reset()
+			}
+
+			target := newM1ToM3ResourceWithMocks(tc.mockVpcepEndpointManager, tc.mockVpcepServiceManager,
+				tc.mockLbmDnsManager)
+			req := resource.UpdateRequest{
+				State: newM1ToM3ResourceStateWithModel(t, tc.state),
+				Plan:  newM1ToM3ResourcePlan(t, tc.plan),
+			}
+			if tc.unknownState {
+				req.State = newUnknownM1ToM3ResourceState(t)
+			}
+			if tc.unknownPlan {
+				req.Plan = newUnknownM1ToM3ResourcePlan(t)
+			}
+			resp := &resource.UpdateResponse{State: newM1ToM3ResourceState(t)}
+
+			target.Update(context.Background(), req, resp)
+
+			assertDiagnostics(t, tc.expectedDiagSummary, tc.expectedDiagDetailContains, resp.Diagnostics.Errors())
+			if len(tc.expectedWarningDetails) == 0 {
+				assert.Empty(t, resp.Diagnostics.Warnings())
+			} else if assert.Len(t, resp.Diagnostics.Warnings(), 1) {
+				warning := resp.Diagnostics.Warnings()[0]
+				assert.Equal(t, "stale resources cleanup failed", warning.Summary())
+				for _, expectedDetail := range tc.expectedWarningDetails {
+					assert.Contains(t, warning.Detail(), expectedDetail)
+				}
+			}
+			if tc.expectedDiagSummary != "" {
+				return
+			}
+
+			var actual netConnectM1ToM3ResourceModel
+			diags := resp.State.Get(context.Background(), &actual)
+
+			require.False(t, diags.HasError(), "expected update state to decode without diagnostics, got %v", diags)
+			assertM1ToM3ResourceState(t, *tc.expectedState, actual)
+			assert.Equal(t, tc.expectedCreateEndpoint, tc.mockVpcepEndpointManager.createInputs)
+			assert.Equal(t, tc.expectedUpdateService, tc.mockVpcepServiceManager.updateServiceInputs)
+			assert.Equal(t, tc.expectedReconcile, tc.mockVpcepServiceManager.reconcilePermissionInputs)
+			assert.Equal(t, tc.expectedCreateDns, tc.mockLbmDnsManager.createInputs)
+			assert.Equal(t, tc.expectedUpdateRecordIds, tc.mockLbmDnsManager.updateRecordIds)
+			assert.Equal(t, tc.expectedUpdateIps, tc.mockLbmDnsManager.updateEndpointIps)
+			assert.Equal(t, tc.expectedDeleteEndpointIds, tc.mockVpcepEndpointManager.deleteIds)
+			assert.Equal(t, tc.expectedDeleteDnsIds, tc.mockLbmDnsManager.deleteRecordIds)
+		})
+	}
+}
+
 func Test_netConnectM1ToM3Resource_reconcileM1ToM3VpcepService(t *testing.T) {
 	const changedPermission = "domain-id-3"
 	testCases := []struct {
