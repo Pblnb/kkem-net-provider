@@ -42,9 +42,9 @@ type m3ToM1CreatedChildResource struct {
 
 type netConnectM3ToM1ResourceModel struct {
 	//vpc-endpoint相关
-	M3VpcEndpointId       types.String `tfsdk:"m3_vpcep_id"`
+	M3VpcepEndpointId     types.String `tfsdk:"m3_vpcep_id"`
 	M3VpcID               types.String `tfsdk:"m3_vpc_id"`
-	M3VpcEndpointIp       types.String `tfsdk:"m3_vpcep_ip"`
+	M3VpcepEndpointIp     types.String `tfsdk:"m3_vpcep_ip"`
 	M3VpcEndpointSubnetId types.String `tfsdk:"m3_vpcep_subnet_id"`
 	SniVpcepServerId      types.String `tfsdk:"sni_vpcep_server_id"`
 	//dns相关
@@ -251,8 +251,8 @@ func (r *netConnectM3ToM1Resource) Create(ctx context.Context, req resource.Crea
 	}
 
 	plan.SniProxyResourceId = types.StringValue(sniProxyResourceId)
-	plan.M3VpcEndpointId = types.StringValue(vpcepEndpointId)
-	plan.M3VpcEndpointIp = types.StringValue(clientIp)
+	plan.M3VpcepEndpointId = types.StringValue(vpcepEndpointId)
+	plan.M3VpcepEndpointIp = types.StringValue(clientIp)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -303,25 +303,25 @@ func (r *netConnectM3ToM1Resource) Read(ctx context.Context, req resource.ReadRe
 		}
 	}
 
-	if !state.M3VpcEndpointId.IsNull() {
-		output, err := r.m3VpcepEndpointManager.Get(ctx, state.M3VpcEndpointId.ValueString())
+	if !state.M3VpcepEndpointId.IsNull() {
+		output, err := r.m3VpcepEndpointManager.Get(ctx, state.M3VpcepEndpointId.ValueString())
 		if err != nil {
 			resp.Diagnostics.AddError("query vpc-endpoint failed", err.Error())
 			return
 		}
 		if output == nil {
 			tflog.Info(ctx, "vpc-endpoint not found, marking as null", map[string]any{
-				"endpoint_id": state.M3VpcEndpointId.ValueString(),
+				"endpoint_id": state.M3VpcepEndpointId.ValueString(),
 			})
-			state.M3VpcEndpointId = types.StringNull()
-			state.M3VpcEndpointIp = types.StringNull()
+			state.M3VpcepEndpointId = types.StringNull()
+			state.M3VpcepEndpointIp = types.StringNull()
 			state.M3VpcID = types.StringNull()
 			state.M3VpcEndpointSubnetId = types.StringNull()
 			state.SniVpcepServerId = types.StringNull()
 		}
 	}
 
-	allRemoved := state.M3VpcEndpointId.IsNull() && state.M3DnsPrivateZoneId.IsNull() && state.SniProxyResourceId.IsNull()
+	allRemoved := state.M3VpcepEndpointId.IsNull() && state.M3DnsPrivateZoneId.IsNull() && state.SniProxyResourceId.IsNull()
 	if allRemoved {
 		tflog.Info(ctx, "All sub-resources not found, removing resource from state")
 		resp.State.RemoveResource(ctx)
@@ -385,7 +385,7 @@ func (r *netConnectM3ToM1Resource) Update(ctx context.Context, req resource.Upda
 			"domain":    plan.M3DnsDomainName.ValueString(),
 		})
 
-		clientIp := state.M3VpcEndpointIp.ValueString()
+		clientIp := state.M3VpcepEndpointIp.ValueString()
 
 		_, err = r.m3DnsManager.CreateRecordSet(ctx, manager.DnsRecordSetInput{
 			ZoneId:  newDomainID,
@@ -431,13 +431,13 @@ func (r *netConnectM3ToM1Resource) Delete(ctx context.Context, req resource.Dele
 		}
 	}
 
-	if !state.M3VpcEndpointId.IsNull() && deleteErr == nil {
-		if err := r.m3VpcepEndpointManager.Delete(ctx, state.M3VpcEndpointId.ValueString()); err != nil {
+	if !state.M3VpcepEndpointId.IsNull() && deleteErr == nil {
+		if err := r.m3VpcepEndpointManager.Delete(ctx, state.M3VpcepEndpointId.ValueString()); err != nil {
 			deleteErr = fmt.Errorf("failed to delete vpc endpoint %s, the sni-proxy remains intact: %w",
-				state.M3VpcEndpointId.ValueString(), err)
+				state.M3VpcepEndpointId.ValueString(), err)
 		} else {
-			state.M3VpcEndpointId = types.StringNull()
-			state.M3VpcEndpointIp = types.StringNull()
+			state.M3VpcepEndpointId = types.StringNull()
+			state.M3VpcepEndpointIp = types.StringNull()
 		}
 	}
 
