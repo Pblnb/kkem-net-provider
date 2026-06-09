@@ -928,7 +928,8 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 
 	if !state.VpcepServiceId.IsNull() && deleteErr == nil {
 		if err := r.m3VpcepServiceManager.Delete(ctx, state.VpcepServiceId.ValueString()); err != nil {
-			deleteErr = fmt.Errorf("delete vpcep-service %s failed: %w", state.VpcepServiceId.ValueString(), err)
+			deleteErr = fmt.Errorf("failed to delete vpcep-service %s, the vpcep service remains intact: %w",
+				state.VpcepServiceId.ValueString(), err)
 		} else {
 			state.VpcepServiceId = types.StringNull()
 		}
@@ -937,9 +938,11 @@ func (r *netConnectM1ToM3Resource) Delete(ctx context.Context, req resource.Dele
 	if deleteErr != nil {
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 		resp.Diagnostics.AddError("delete m1-to-m3 network connection failed", deleteErr.Error())
+		tflog.Error(ctx, "KKEM_net_connect_m1_to_m3: Delete failed", map[string]any{"error": deleteErr.Error()})
 		return
 	}
 
+	tflog.Info(ctx, "KKEM_net_connect_m1_to_m3: Delete completed")
 	resp.State.RemoveResource(ctx)
 }
 
