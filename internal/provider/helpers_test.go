@@ -34,7 +34,6 @@ const (
 	testVpcepEndpointIp    = "10.0.0.8"
 	testLbmDnsRecordId     = "dns-record-1"
 	testSniProxyId         = "sni-1"
-	testVpcepId            = "vpcep-1"
 	testDnsId              = "dns-1"
 	testIamDomainId        = "domain-id-1"
 	testAnotherIamDomainId = "domain-id-2"
@@ -227,12 +226,15 @@ type mockM3ToM1DnsManager struct {
 	createZoneErr    error
 	createRecordErr  error
 	deletePrivateErr error
+	getZoneErr       error
 
 	// 返回数据
 	createPrivateZoneId string
 	createRecordSetId   string
-
+	getOutput           *manager.DnsZoneOutput
 	// 调用记录
+	getCalls      int
+	getId         string
 	zoneInputs    []manager.DnsZoneInput
 	recordInputs  []manager.DnsRecordSetInput
 	deleteZoneIds []string
@@ -253,35 +255,40 @@ func (m *mockM3ToM1DnsManager) DeletePrivateZone(_ context.Context, zoneId strin
 	return m.deletePrivateErr
 }
 
-func (m *mockM3ToM1DnsManager) GetPrivateZone(_ context.Context, _ string) (*manager.DnsZoneOutput, error) {
-	return nil, nil
+func (m *mockM3ToM1DnsManager) GetPrivateZone(_ context.Context, zoneId string) (*manager.DnsZoneOutput, error) {
+	m.getCalls++
+	m.getId = zoneId
+	return m.getOutput, m.getZoneErr
 }
 
 type mockM3ToM1SniProxyManager struct {
 	// 错误注入
-	accessErr error
-	deleteErr error
+	accessErr      error
+	deleteErr      error
+	getSniProxyErr error
 
 	// 返回数据
-	accessResourceId string
+	accessResourceId       string
+	getOutput              *manager.AccessSniProxyOutput
+	getAccessServiceOutput *sniproxyclient.GetAccessServiceResponse
 
 	// 调用记录
+	getCalls     int
+	getId        string
 	accessInputs []manager.AccessSniProxyInput
 	deleteIds    []string
 }
 
-func (m *mockM3ToM1SniProxyManager) AccessSniProxy(_ context.Context,
-	input manager.AccessSniProxyInput) (string, error) {
+func (m *mockM3ToM1SniProxyManager) AccessSniProxy(_ context.Context, input manager.AccessSniProxyInput) (string, error) {
 	m.accessInputs = append(m.accessInputs, input)
 	return m.accessResourceId, m.accessErr
 }
-
 func (m *mockM3ToM1SniProxyManager) DeleteSniProxy(_ context.Context, resourceId string) error {
 	m.deleteIds = append(m.deleteIds, resourceId)
 	return m.deleteErr
 }
-
-func (m *mockM3ToM1SniProxyManager) GetSniProxy(_ context.Context,
-	_ string) (*manager.AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
-	return nil, nil, nil
+func (m *mockM3ToM1SniProxyManager) GetSniProxy(_ context.Context, resourceId string) (*manager.AccessSniProxyOutput, *sniproxyclient.GetAccessServiceResponse, error) {
+	m.getCalls++
+	m.getId = resourceId
+	return m.getOutput, m.getAccessServiceOutput, m.getSniProxyErr
 }
